@@ -1,0 +1,6 @@
+package com.sdp1617.backend.auth.dto;
+
+public record AccessTokenResponse(
+        String accessToken
+) {
+}
