@@ -41,4 +41,5 @@ jobs:
       - name: Build and test
         env:
           SPRING_PROFILES_ACTIVE: prod
+          JWT_SECRET: ci-only-jwt-secret-key-not-used-in-production-1234567890
         run: ./gradlew build
