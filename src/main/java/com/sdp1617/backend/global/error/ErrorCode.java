@@ -10,6 +10,7 @@ public enum ErrorCode {
     COMMON_002(HttpStatus.BAD_REQUEST, "COMMON_002", "요청 값이 올바르지 않습니다."),
     COMMON_003(HttpStatus.UNAUTHORIZED, "COMMON_003", "인증이 필요합니다."),
     COMMON_004(HttpStatus.FORBIDDEN, "COMMON_004", "접근 권한이 없습니다."),
+    COMMON_005(HttpStatus.CONFLICT, "COMMON_005", "이미 존재하는 리소스입니다."),
     COMMON_999(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_999", "서버 내부 오류가 발생했습니다."),
 
     AUTH_001(HttpStatus.UNAUTHORIZED, "AUTH_001", "아이디 또는 비밀번호가 일치하지 않습니다."),
@@ -17,6 +18,11 @@ public enum ErrorCode {
     AUTH_003(HttpStatus.UNAUTHORIZED, "AUTH_003", "유효하지 않은 토큰입니다."),
     AUTH_004(HttpStatus.UNAUTHORIZED, "AUTH_004", "만료된 토큰입니다."),
     AUTH_005(HttpStatus.UNAUTHORIZED, "AUTH_005", "저장된 refresh token을 찾을 수 없습니다."),
+    AUTH_006(HttpStatus.CONFLICT, "AUTH_006", "이미 가입된 이메일입니다."),
+    AUTH_007(HttpStatus.CONFLICT, "AUTH_007", "이미 사용 중인 닉네임입니다."),
+    AUTH_008(HttpStatus.BAD_REQUEST, "AUTH_008", "비밀번호가 일치하지 않습니다."),
+    AUTH_010(HttpStatus.LOCKED, "AUTH_010", "5회 로그인 실패로 계정이 잠겼습니다. 이메일 인증으로 잠금을 해제해주세요."),
+    AUTH_011(HttpStatus.BAD_REQUEST, "AUTH_011", "유효하지 않거나 만료된 링크입니다."),
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
