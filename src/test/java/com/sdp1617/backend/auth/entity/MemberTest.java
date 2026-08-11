@@ -1,0 +1,57 @@
+package com.sdp1617.backend.auth.entity;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class MemberTest {
+
+    @Test
+    void 실패횟수가_5회_미만이면_잠기지_않는다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+
+        for (int i = 0; i < 4; i++) {
+            member.increaseFailedLoginCount();
+        }
+
+        assertFalse(member.isLocked());
+    }
+
+    @Test
+    void 실패횟수가_5회면_잠긴다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+
+        for (int i = 0; i < 5; i++) {
+            member.increaseFailedLoginCount();
+        }
+
+        assertTrue(member.isLocked());
+    }
+
+    @Test
+    void unlock하면_실패횟수가_초기화되고_잠금이_풀린다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        for (int i = 0; i < 5; i++) {
+            member.increaseFailedLoginCount();
+        }
+
+        member.unlock();
+
+        assertFalse(member.isLocked());
+        assertEquals(0, member.getFailedLoginCount());
+    }
+
+    @Test
+    void resetFailedLoginCount하면_잠금상태도_함께_풀린다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        for (int i = 0; i < 5; i++) {
+            member.increaseFailedLoginCount();
+        }
+
+        member.resetFailedLoginCount();
+
+        assertFalse(member.isLocked());
+    }
+}
