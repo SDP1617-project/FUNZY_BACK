@@ -16,7 +16,11 @@ public enum ErrorCode {
     AUTH_002(HttpStatus.NOT_FOUND, "AUTH_002", "존재하지 않는 회원입니다."),
     AUTH_003(HttpStatus.UNAUTHORIZED, "AUTH_003", "유효하지 않은 토큰입니다."),
     AUTH_004(HttpStatus.UNAUTHORIZED, "AUTH_004", "만료된 토큰입니다."),
-    AUTH_005(HttpStatus.UNAUTHORIZED, "AUTH_005", "저장된 refresh token을 찾을 수 없습니다.");
+    AUTH_005(HttpStatus.UNAUTHORIZED, "AUTH_005", "저장된 refresh token을 찾을 수 없습니다."),
+
+    ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
+    ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
+    ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card.");
 
     private final HttpStatus httpStatus;
     private final String code;
