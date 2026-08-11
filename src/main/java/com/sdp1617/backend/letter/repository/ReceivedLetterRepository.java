@@ -5,4 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface ReceivedLetterRepository extends JpaRepository<ReceivedLetter, Long>, JpaSpecificationExecutor<ReceivedLetter> {
+
+    boolean existsByIdAndReceiverMemberId(Long id, Long receiverMemberId);
 }

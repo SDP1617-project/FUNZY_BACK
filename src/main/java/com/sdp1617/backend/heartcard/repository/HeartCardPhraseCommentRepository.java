@@ -7,12 +7,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface HeartCardPhraseCommentRepository extends JpaRepository<HeartCardPhraseComment, Long> {
 
     List<HeartCardPhraseComment> findByHeartCardIdOrderByStartOffsetAsc(Long heartCardId);
 
     Optional<HeartCardPhraseComment> findByIdAndHeartCardId(Long id, Long heartCardId);
+
+    void deleteByHeartCardIdIn(Collection<Long> heartCardIds);
 
     @Query("""
             select count(comment) > 0
