@@ -2,6 +2,7 @@ package com.sdp1617.backend.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import java.util.Locale;
 
 public record PasswordResetRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
@@ -9,6 +10,6 @@ public record PasswordResetRequest(
         String email
 ) {
     public PasswordResetRequest {
-        email = email == null ? null : email.trim();
+        email = email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 }

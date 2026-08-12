@@ -9,6 +9,7 @@ public record PasswordResetConfirmRequest(
 
         @NotBlank(message = "새 비밀번호를 입력해주세요.")
         @Pattern(regexp = PasswordPolicy.REGEXP, message = PasswordPolicy.MESSAGE)
+        @MaxUtf8Bytes(value = PasswordPolicy.MAX_BYTES, message = PasswordPolicy.MAX_BYTES_MESSAGE)
         String newPassword,
 
         @NotBlank(message = "새 비밀번호 확인을 입력해주세요.")
