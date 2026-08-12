@@ -2,7 +2,7 @@ package com.sdp1617.backend.auth.service;
 
 import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.SignUpRequest;
-import com.sdp1617.backend.auth.email.EmailSender;
+import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.dto.TokenResponse;
 import com.sdp1617.backend.auth.repository.MemberRepository;
@@ -12,6 +12,7 @@ import com.sdp1617.backend.global.error.ErrorCode;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +31,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final LoginAttemptRecorder loginAttemptRecorder;
     private final VerificationTokenRepository verificationTokenRepository;
-    private final EmailSender emailSender;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -63,7 +64,7 @@ public class AuthService {
     @Transactional
     public TokenResponse login(LoginRequest request) {
         Member member = memberRepository.findByEmail(request.email())
-                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_001));
 
         if (member.isLocked()) {
             throw new CustomException(ErrorCode.AUTH_010);
@@ -83,7 +84,11 @@ public class AuthService {
         memberRepository.findByEmail(email).ifPresent(member -> {
             String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
             String link = frontendUrl + "/reset-password?token=" + token;
-            emailSender.send(member.getEmail(), "비밀번호 재설정 안내", "아래 링크에서 비밀번호를 재설정해주세요 (15분간 유효):\n" + link);
+            eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+                    member.getEmail(),
+                    "비밀번호 재설정 안내",
+                    "아래 링크에서 비밀번호를 재설정해주세요 (15분간 유효):\n" + link
+            ));
         });
     }
 
@@ -100,6 +105,7 @@ public class AuthService {
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
 
         member.changePassword(passwordEncoder.encode(newPassword));
+        member.unlock();
         tokenService.revokeAllSessions(memberId);
     }
 
@@ -108,7 +114,11 @@ public class AuthService {
         memberRepository.findByEmail(email).ifPresent(member -> {
             String token = verificationTokenRepository.issue(ACCOUNT_UNLOCK_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
             String link = frontendUrl + "/unlock-account?token=" + token;
-            emailSender.send(member.getEmail(), "계정 잠금 해제 안내", "아래 링크에서 계정 잠금을 해제해주세요 (15분간 유효):\n" + link);
+            eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+                    member.getEmail(),
+                    "계정 잠금 해제 안내",
+                    "아래 링크에서 계정 잠금을 해제해주세요 (15분간 유효):\n" + link
+            ));
         });
     }
 

@@ -1,6 +1,5 @@
 package com.sdp1617.backend.auth.service;
 
-import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
@@ -17,8 +16,9 @@ public class LoginAttemptRecorder {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFailure(Long memberId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
-        member.increaseFailedLoginCount();
+        int updated = memberRepository.incrementFailedLoginCount(memberId);
+        if (updated == 0) {
+            throw new CustomException(ErrorCode.AUTH_002);
+        }
     }
 }
