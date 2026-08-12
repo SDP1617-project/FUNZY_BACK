@@ -3,10 +3,12 @@ package com.sdp1617.backend.global.error;
 import com.sdp1617.backend.global.common.response.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -39,6 +41,21 @@ public class GlobalExceptionHandler {
                 .orElse(ErrorCode.COMMON_002.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(ErrorCode.COMMON_002, message));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameterException(
+            MissingServletRequestParameterException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(ErrorCode.COMMON_002, exception.getParameterName() + "은(는) 필수입니다."));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(DataIntegrityViolationException exception) {
+        log.warn("Data integrity violation: {}", exception.getClass().getSimpleName());
+        return ResponseEntity.status(ErrorCode.COMMON_005.getHttpStatus())
+                .body(ErrorResponse.of(ErrorCode.COMMON_005));
     }
 
     @ExceptionHandler(Exception.class)

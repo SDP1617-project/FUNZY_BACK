@@ -37,4 +37,8 @@ public class TokenService {
 
         return new AccessTokenResponse(jwtProvider.createAccessToken(claims.memberId()));
     }
+
+    public void revokeAllSessions(Long memberId) {
+        refreshTokenRepository.deleteAllByMemberId(memberId);
+    }
 }

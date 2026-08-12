@@ -11,3 +11,6 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET}
+
+app:
+  frontend-url: ${FRONTEND_URL}
