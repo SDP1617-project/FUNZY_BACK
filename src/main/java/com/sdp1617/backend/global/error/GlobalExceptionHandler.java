@@ -53,7 +53,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(DataIntegrityViolationException exception) {
-        log.warn("Data integrity violation", exception);
+        log.warn("Data integrity violation: {}", exception.getClass().getSimpleName());
         return ResponseEntity.status(ErrorCode.COMMON_005.getHttpStatus())
                 .body(ErrorResponse.of(ErrorCode.COMMON_005));
     }

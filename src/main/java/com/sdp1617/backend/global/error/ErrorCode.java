@@ -10,7 +10,7 @@ public enum ErrorCode {
     COMMON_002(HttpStatus.BAD_REQUEST, "COMMON_002", "요청 값이 올바르지 않습니다."),
     COMMON_003(HttpStatus.UNAUTHORIZED, "COMMON_003", "인증이 필요합니다."),
     COMMON_004(HttpStatus.FORBIDDEN, "COMMON_004", "접근 권한이 없습니다."),
-    COMMON_005(HttpStatus.CONFLICT, "COMMON_005", "이미 존재하는 리소스입니다."),
+    COMMON_005(HttpStatus.CONFLICT, "COMMON_005", "데이터 제약 조건을 위반했습니다."),
     COMMON_999(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON_999", "서버 내부 오류가 발생했습니다."),
 
     AUTH_001(HttpStatus.UNAUTHORIZED, "AUTH_001", "아이디 또는 비밀번호가 일치하지 않습니다."),
