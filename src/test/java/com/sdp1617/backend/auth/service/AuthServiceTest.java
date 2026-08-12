@@ -3,7 +3,7 @@ package com.sdp1617.backend.auth.service;
 import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.SignUpRequest;
 import com.sdp1617.backend.auth.dto.TokenResponse;
-import com.sdp1617.backend.auth.email.EmailSender;
+import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.VerificationTokenRepository;
@@ -19,13 +19,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,7 +50,7 @@ class AuthServiceTest {
     private VerificationTokenRepository verificationTokenRepository;
 
     @Mock
-    private EmailSender emailSender;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private AuthService authService;
@@ -116,14 +117,14 @@ class AuthServiceTest {
     }
 
     @Test
-    void 존재하지_않는_이메일로_로그인하면_AUTH_002_예외를_던진다() {
+    void 존재하지_않는_이메일로_로그인하면_AUTH_001_예외를_던진다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 
         LoginRequest request = new LoginRequest("nobody@sdp1617.com", "Password1!");
 
         CustomException exception = assertThrows(CustomException.class, () -> authService.login(request));
 
-        assertEquals(ErrorCode.AUTH_002, exception.getErrorCode());
+        assertEquals(ErrorCode.AUTH_001, exception.getErrorCode());
     }
 
     @Test
@@ -173,8 +174,11 @@ class AuthServiceTest {
     }
 
     @Test
-    void 유효한_토큰으로_비밀번호를_재설정하고_모든_세션을_폐기한다() {
+    void 유효한_토큰으로_비밀번호를_재설정하면_잠금도_풀리고_모든_세션이_폐기된다() {
         Member member = member("test@sdp1617.com", "old-encoded", "닉네임");
+        for (int i = 0; i < 5; i++) {
+            member.increaseFailedLoginCount();
+        }
         when(verificationTokenRepository.consume("password-reset", "token-value")).thenReturn(Optional.of(1L));
         when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
         when(passwordEncoder.encode("NewPassword1!")).thenReturn("new-encoded");
@@ -182,6 +186,7 @@ class AuthServiceTest {
         authService.resetPassword("token-value", "NewPassword1!", "NewPassword1!");
 
         assertEquals("new-encoded", member.getPassword());
+        assertFalse(member.isLocked());
         verify(tokenService).revokeAllSessions(1L);
     }
 
@@ -196,7 +201,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void 비밀번호_재설정_요청시_링크가_포함된_메일을_보낸다() {
+    void 비밀번호_재설정_요청시_링크가_포함된_이벤트를_발행한다() {
         Member member = member("test@sdp1617.com", "encoded", "닉네임");
         setId(member, 1L);
         when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
@@ -204,11 +209,10 @@ class AuthServiceTest {
 
         authService.requestPasswordReset("test@sdp1617.com");
 
-        verify(emailSender).send(
-                eq("test@sdp1617.com"),
-                anyString(),
-                org.mockito.ArgumentMatchers.contains("http://localhost:3000/reset-password?token=token-value")
-        );
+        ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("test@sdp1617.com", captor.getValue().to());
+        assertTrue(captor.getValue().body().contains("http://localhost:3000/reset-password?token=token-value"));
     }
 
     @Test
@@ -217,7 +221,7 @@ class AuthServiceTest {
 
         authService.requestPasswordReset("nobody@sdp1617.com");
 
-        verify(emailSender, never()).send(any(), any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
     }
 
@@ -227,7 +231,7 @@ class AuthServiceTest {
 
         authService.requestAccountUnlock("nobody@sdp1617.com");
 
-        verify(emailSender, never()).send(any(), any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
     }
 
@@ -242,7 +246,7 @@ class AuthServiceTest {
 
         authService.unlockAccount("token-value");
 
-        assertTrue(!member.isLocked());
+        assertFalse(member.isLocked());
         assertEquals(0, member.getFailedLoginCount());
         verify(tokenService).revokeAllSessions(1L);
     }
