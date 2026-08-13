@@ -35,6 +35,8 @@ app:
   support:
     terms-of-service-url: ${TERMS_OF_SERVICE_URL:https://sdp1617.example.com/terms}
     privacy-policy-url: ${PRIVACY_POLICY_URL:https://sdp1617.example.com/privacy}
+  social:
+    max-friend-count: ${MAX_FRIEND_COUNT:50}
 
 google:
   client-id: ${GOOGLE_CLIENT_ID:68223418406-g2sdcb7dj9kl8rnl2emp1eg8kfbp08el.apps.googleusercontent.com}

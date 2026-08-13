@@ -30,7 +30,15 @@ public enum ErrorCode {
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
-    ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card.");
+    ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card."),
+
+    SOCIAL_001(HttpStatus.NOT_FOUND, "SOCIAL_001", "존재하지 않는 친구 코드입니다."),
+    SOCIAL_002(HttpStatus.BAD_REQUEST, "SOCIAL_002", "본인에게는 팔로우 요청을 보낼 수 없습니다."),
+    SOCIAL_003(HttpStatus.CONFLICT, "SOCIAL_003", "이미 친구인 회원입니다."),
+    SOCIAL_004(HttpStatus.CONFLICT, "SOCIAL_004", "이미 보낸 팔로우 요청이 있습니다."),
+    SOCIAL_005(HttpStatus.BAD_REQUEST, "SOCIAL_005", "친구 수 상한을 초과했습니다."),
+    SOCIAL_006(HttpStatus.NOT_FOUND, "SOCIAL_006", "존재하지 않는 팔로우 요청입니다."),
+    SOCIAL_007(HttpStatus.NOT_FOUND, "SOCIAL_007", "친구 관계가 아닙니다.");
 
     private final HttpStatus httpStatus;
     private final String code;
