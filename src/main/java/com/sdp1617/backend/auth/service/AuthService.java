@@ -119,7 +119,7 @@ public class AuthService {
 
         member.changePassword(passwordEncoder.encode(newPassword));
         member.unlock();
-        tokenService.revokeAllSessions(memberId);
+        eventPublisher.publishEvent(new AllSessionsRevokedEvent(memberId));
     }
 
     @Transactional
@@ -144,6 +144,6 @@ public class AuthService {
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
 
         member.unlock();
-        tokenService.revokeAllSessions(memberId);
+        eventPublisher.publishEvent(new AllSessionsRevokedEvent(memberId));
     }
 }

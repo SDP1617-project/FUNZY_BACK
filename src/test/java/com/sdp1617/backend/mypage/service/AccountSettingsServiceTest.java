@@ -3,6 +3,7 @@ package com.sdp1617.backend.mypage.service;
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
+import com.sdp1617.backend.auth.service.AllSessionsRevokedEvent;
 import com.sdp1617.backend.auth.service.TokenService;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,6 +35,9 @@ class AccountSettingsServiceTest {
 
     @Mock
     private TokenService tokenService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private AccountSettingsService accountSettingsService;
@@ -77,7 +82,7 @@ class AccountSettingsServiceTest {
         accountSettingsService.changePassword(1L, "oldPw1!", "NewPassword1!", "NewPassword1!");
 
         assertEquals("new-encoded", member.getPassword());
-        verify(tokenService).revokeAllSessions(1L);
+        verify(eventPublisher).publishEvent(new AllSessionsRevokedEvent(1L));
     }
 
     @Test
@@ -134,7 +139,7 @@ class AccountSettingsServiceTest {
         accountSettingsService.withdraw(1L);
 
         verify(memberRepository).delete(member);
-        verify(tokenService).revokeAllSessions(1L);
+        verify(eventPublisher).publishEvent(new AllSessionsRevokedEvent(1L));
     }
 
     @Test

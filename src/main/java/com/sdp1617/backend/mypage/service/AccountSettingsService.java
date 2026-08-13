@@ -2,11 +2,13 @@ package com.sdp1617.backend.mypage.service;
 
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
+import com.sdp1617.backend.auth.service.AllSessionsRevokedEvent;
 import com.sdp1617.backend.auth.service.TokenService;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,7 @@ public class AccountSettingsService {
     private final MemberRepository memberRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ConnectedAccountResponse getConnectedAccount(Long memberId) {
         Member member = memberRepository.findById(memberId)
@@ -43,7 +46,7 @@ public class AccountSettingsService {
         }
 
         member.changePassword(passwordEncoder.encode(newPassword));
-        tokenService.revokeAllSessions(memberId);
+        eventPublisher.publishEvent(new AllSessionsRevokedEvent(memberId));
     }
 
     @Transactional
@@ -57,6 +60,6 @@ public class AccountSettingsService {
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
 
         memberRepository.delete(member);
-        tokenService.revokeAllSessions(memberId);
+        eventPublisher.publishEvent(new AllSessionsRevokedEvent(memberId));
     }
 }
