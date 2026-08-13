@@ -124,6 +124,8 @@ public class Member {
         if (this.followCode == null) {
             this.followCode = FollowCodeGenerator.generate();
         }
+    }
+
     public void updatePushNotificationEnabled(boolean pushNotificationEnabled) {
         this.pushNotificationEnabled = pushNotificationEnabled;
     }

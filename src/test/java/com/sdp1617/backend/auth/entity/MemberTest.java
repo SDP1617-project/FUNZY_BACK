@@ -96,6 +96,9 @@ class MemberTest {
         member.reissueFollowCode();
 
         assertNotEquals(firstCode, member.getFollowCode());
+    }
+
+    @Test
     void 가입시_푸시_알림_수신은_기본으로_켜져있다() {
         Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
 

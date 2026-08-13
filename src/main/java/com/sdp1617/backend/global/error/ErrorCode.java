@@ -38,8 +38,8 @@ public enum ErrorCode {
     SOCIAL_004(HttpStatus.CONFLICT, "SOCIAL_004", "이미 보낸 팔로우 요청이 있습니다."),
     SOCIAL_005(HttpStatus.BAD_REQUEST, "SOCIAL_005", "친구 수 상한을 초과했습니다."),
     SOCIAL_006(HttpStatus.NOT_FOUND, "SOCIAL_006", "존재하지 않는 팔로우 요청입니다."),
-    SOCIAL_007(HttpStatus.NOT_FOUND, "SOCIAL_007", "친구 관계가 아닙니다.");
-  
+    SOCIAL_007(HttpStatus.NOT_FOUND, "SOCIAL_007", "친구 관계가 아닙니다."),
+
     NOTIFICATION_001(HttpStatus.NOT_FOUND, "NOTIFICATION_001", "존재하지 않는 알림입니다.");
 
     private final HttpStatus httpStatus;
