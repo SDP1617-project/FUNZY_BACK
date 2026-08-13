@@ -8,6 +8,7 @@ import com.sdp1617.backend.notification.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -38,7 +39,7 @@ public class NotificationController {
     @Operation(summary = "푸시 알림 수신 설정 변경")
     public ApiResponse<Void> updatePushSetting(
             @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
-            @RequestBody PushSettingUpdateRequest request
+            @Valid @RequestBody PushSettingUpdateRequest request
     ) {
         notificationService.updatePushSetting(memberId, request.pushNotificationEnabled());
         return ApiResponse.ok("푸시 알림 설정이 변경되었습니다.", null);
