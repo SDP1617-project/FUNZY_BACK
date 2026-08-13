@@ -54,4 +54,20 @@ class MemberTest {
 
         assertFalse(member.isLocked());
     }
+
+    @Test
+    void 이메일_가입_회원은_비밀번호를_가진다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+
+        assertTrue(member.hasPassword());
+    }
+
+    @Test
+    void 소셜_가입_회원은_비밀번호가_없다() {
+        Member member = new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+
+        assertFalse(member.hasPassword());
+        assertEquals(AuthProvider.KAKAO, member.getProvider());
+        assertEquals("12345", member.getProviderId());
+    }
 }

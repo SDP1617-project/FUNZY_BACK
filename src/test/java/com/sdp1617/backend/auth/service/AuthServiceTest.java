@@ -4,6 +4,7 @@ import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.SignUpRequest;
 import com.sdp1617.backend.auth.dto.TokenResponse;
 import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
+import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.VerificationTokenRepository;
@@ -140,6 +141,20 @@ class AuthServiceTest {
         CustomException exception = assertThrows(CustomException.class, () -> authService.login(request));
 
         assertEquals(ErrorCode.AUTH_010, exception.getErrorCode());
+    }
+
+    @Test
+    void 소셜전용_계정으로_이메일_로그인을_시도하면_AUTH_001_예외를_던진다() {
+        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        setId(member, 1L);
+        when(memberRepository.findByEmail("social@sdp1617.com")).thenReturn(Optional.of(member));
+
+        LoginRequest request = new LoginRequest("social@sdp1617.com", "Password1!");
+
+        CustomException exception = assertThrows(CustomException.class, () -> authService.login(request));
+
+        assertEquals(ErrorCode.AUTH_001, exception.getErrorCode());
+        verify(loginAttemptRecorder).recordFailure(1L);
     }
 
     @Test
