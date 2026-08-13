@@ -16,7 +16,8 @@ public class GoogleIssuerValidator implements OAuth2TokenValidator<Jwt> {
 
     @Override
     public OAuth2TokenValidatorResult validate(Jwt jwt) {
-        if (VALID_ISSUERS.contains(jwt.getClaimAsString("iss"))) {
+        String issuer = jwt.getClaimAsString("iss");
+        if (issuer != null && VALID_ISSUERS.contains(issuer)) {
             return OAuth2TokenValidatorResult.success();
         }
         return OAuth2TokenValidatorResult.failure(

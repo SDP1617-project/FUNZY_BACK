@@ -152,4 +152,15 @@ class GoogleUserInfoProviderTest {
 
         assertEquals("98765", info.externalId());
     }
+
+    @Test
+    void issuer_클레임이_없으면_AUTH_013_예외를_던진다() throws Exception {
+        GoogleUserInfoProvider provider = new GoogleUserInfoProvider(decoder);
+        String token = signedToken(keyPair, null, CLIENT_ID, "98765",
+                "test@gmail.com", true, Instant.now().plusSeconds(3600));
+
+        CustomException exception = assertThrows(CustomException.class, () -> provider.fetchUserInfo(token));
+
+        assertEquals(ErrorCode.AUTH_013, exception.getErrorCode());
+    }
 }
