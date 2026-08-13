@@ -70,6 +70,12 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_010);
         }
 
+        if (!member.hasPassword()) {
+            // 소셜 전용 계정 - 계정 존재 여부가 드러나지 않도록 일반 로그인 실패와 동일하게 처리
+            loginAttemptRecorder.recordFailure(member.getId());
+            throw new CustomException(ErrorCode.AUTH_001);
+        }
+
         if (!passwordEncoder.matches(request.password(), member.getPassword())) {
             loginAttemptRecorder.recordFailure(member.getId());
             throw new CustomException(ErrorCode.AUTH_001);

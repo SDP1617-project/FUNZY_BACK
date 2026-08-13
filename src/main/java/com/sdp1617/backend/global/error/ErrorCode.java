@@ -23,6 +23,8 @@ public enum ErrorCode {
     AUTH_008(HttpStatus.BAD_REQUEST, "AUTH_008", "비밀번호가 일치하지 않습니다."),
     AUTH_010(HttpStatus.LOCKED, "AUTH_010", "5회 로그인 실패로 계정이 잠겼습니다. 이메일 인증으로 잠금을 해제해주세요."),
     AUTH_011(HttpStatus.BAD_REQUEST, "AUTH_011", "유효하지 않거나 만료된 링크입니다."),
+    AUTH_012(HttpStatus.CONFLICT, "AUTH_012", "이미 다른 방식으로 가입된 이메일입니다."),
+    AUTH_013(HttpStatus.UNAUTHORIZED, "AUTH_013", "소셜 인증에 실패했습니다."),
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
