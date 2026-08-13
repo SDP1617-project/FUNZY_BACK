@@ -1,26 +1,21 @@
 package com.sdp1617.backend.auth.social;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 @Component
 public class GoogleUserInfoProvider implements SocialUserInfoProvider {
 
-    private final RestClient restClient;
-    private final String expectedClientId;
+    private final JwtDecoder googleJwtDecoder;
 
-    public GoogleUserInfoProvider(
-            RestClient.Builder restClientBuilder,
-            @Value("${google.client-id}") String expectedClientId
-    ) {
-        this.restClient = restClientBuilder.baseUrl("https://oauth2.googleapis.com").build();
-        this.expectedClientId = expectedClientId;
+    public GoogleUserInfoProvider(@Qualifier("googleJwtDecoder") JwtDecoder googleJwtDecoder) {
+        this.googleJwtDecoder = googleJwtDecoder;
     }
 
     @Override
@@ -31,27 +26,19 @@ public class GoogleUserInfoProvider implements SocialUserInfoProvider {
     @Override
     public SocialUserInfo fetchUserInfo(String idToken) {
         try {
-            GoogleTokenInfoResponse response = restClient.get()
-                    .uri(uriBuilder -> uriBuilder.path("/tokeninfo").queryParam("id_token", idToken).build())
-                    .retrieve()
-                    .body(GoogleTokenInfoResponse.class);
+            Jwt jwt = googleJwtDecoder.decode(idToken);
 
-            if (response == null || response.sub() == null || !expectedClientId.equals(response.aud())) {
+            String sub = jwt.getSubject();
+            if (sub == null) {
                 throw new CustomException(ErrorCode.AUTH_013);
             }
 
-            String email = "true".equals(response.emailVerified()) ? response.email() : null;
-            return new SocialUserInfo(response.sub(), email);
-        } catch (RestClientException e) {
+            Boolean emailVerified = jwt.getClaimAsBoolean("email_verified");
+            String email = Boolean.TRUE.equals(emailVerified) ? jwt.getClaimAsString("email") : null;
+
+            return new SocialUserInfo(sub, email);
+        } catch (JwtException e) {
             throw new CustomException(ErrorCode.AUTH_013);
         }
-    }
-
-    private record GoogleTokenInfoResponse(
-            String sub,
-            String email,
-            String aud,
-            @JsonProperty("email_verified") String emailVerified
-    ) {
     }
 }
