@@ -25,6 +25,8 @@ public enum ErrorCode {
     AUTH_011(HttpStatus.BAD_REQUEST, "AUTH_011", "유효하지 않거나 만료된 링크입니다."),
     AUTH_012(HttpStatus.CONFLICT, "AUTH_012", "이미 다른 방식으로 가입된 이메일입니다."),
     AUTH_013(HttpStatus.UNAUTHORIZED, "AUTH_013", "소셜 인증에 실패했습니다."),
+    AUTH_014(HttpStatus.BAD_REQUEST, "AUTH_014", "소셜 전용 계정은 비밀번호를 변경할 수 없습니다."),
+    AUTH_015(HttpStatus.BAD_REQUEST, "AUTH_015", "현재 비밀번호가 일치하지 않습니다."),
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),

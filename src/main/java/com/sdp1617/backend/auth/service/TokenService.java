@@ -41,4 +41,14 @@ public class TokenService {
     public void revokeAllSessions(Long memberId) {
         refreshTokenRepository.deleteAllByMemberId(memberId);
     }
+
+    public void revokeSession(Long memberId, String refreshToken) {
+        JwtClaims claims = jwtProvider.parse(refreshToken, TokenType.REFRESH);
+
+        if (!claims.memberId().equals(memberId)) {
+            throw new CustomException(ErrorCode.AUTH_003);
+        }
+
+        refreshTokenRepository.deleteOne(memberId, claims.tokenId());
+    }
 }

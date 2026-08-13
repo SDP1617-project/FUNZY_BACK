@@ -202,7 +202,7 @@ class AuthServiceTest {
 
         assertEquals("new-encoded", member.getPassword());
         assertFalse(member.isLocked());
-        verify(tokenService).revokeAllSessions(1L);
+        verify(eventPublisher).publishEvent(new AllSessionsRevokedEvent(1L));
     }
 
     @Test
@@ -288,7 +288,7 @@ class AuthServiceTest {
 
         assertFalse(member.isLocked());
         assertEquals(0, member.getFailedLoginCount());
-        verify(tokenService).revokeAllSessions(1L);
+        verify(eventPublisher).publishEvent(new AllSessionsRevokedEvent(1L));
     }
 
     @Test

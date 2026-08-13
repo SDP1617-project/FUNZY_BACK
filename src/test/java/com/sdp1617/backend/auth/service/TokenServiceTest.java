@@ -66,4 +66,24 @@ class TokenServiceTest {
 
         assertEquals(ErrorCode.AUTH_005, exception.getErrorCode());
     }
+
+    @Test
+    void revokeSession은_해당_세션만_삭제한다() {
+        String refreshToken = "refresh-token";
+        when(jwtProvider.parse(refreshToken, TokenType.REFRESH)).thenReturn(new JwtClaims(1L, "session-1"));
+
+        tokenService.revokeSession(1L, refreshToken);
+
+        verify(refreshTokenRepository).deleteOne(1L, "session-1");
+    }
+
+    @Test
+    void revokeSession시_토큰의_memberId가_다르면_AUTH_003_예외를_던진다() {
+        String refreshToken = "refresh-token";
+        when(jwtProvider.parse(refreshToken, TokenType.REFRESH)).thenReturn(new JwtClaims(2L, "session-1"));
+
+        CustomException exception = assertThrows(CustomException.class, () -> tokenService.revokeSession(1L, refreshToken));
+
+        assertEquals(ErrorCode.AUTH_003, exception.getErrorCode());
+    }
 }
