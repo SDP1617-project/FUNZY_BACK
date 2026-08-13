@@ -25,6 +25,13 @@ public class RefreshTokenRepository {
             Long.class
     );
 
+    private static final RedisScript<Long> DELETE_ONE_SCRIPT = new DefaultRedisScript<>(
+            "redis.call('DEL', KEYS[1]) " +
+                    "redis.call('SREM', KEYS[2], ARGV[1]) " +
+                    "return 1",
+            Long.class
+    );
+
     private static final RedisScript<Long> DELETE_ALL_SCRIPT = new DefaultRedisScript<>(
             "local tokenIds = redis.call('SMEMBERS', KEYS[1]) " +
                     "for _, tokenId in ipairs(tokenIds) do " +
@@ -49,6 +56,14 @@ public class RefreshTokenRepository {
 
     public boolean exists(Long memberId, String tokenId) {
         return Boolean.TRUE.equals(redisTemplate.hasKey(key(memberId, tokenId)));
+    }
+
+    public void deleteOne(Long memberId, String tokenId) {
+        redisTemplate.execute(
+                DELETE_ONE_SCRIPT,
+                List.of(key(memberId, tokenId), sessionsKey(memberId)),
+                tokenId
+        );
     }
 
     public void deleteAllByMemberId(Long memberId) {
