@@ -45,9 +45,11 @@ class GoogleUserInfoProviderTest {
         NimbusJwtDecoder nimbusDecoder = NimbusJwtDecoder
                 .withPublicKey((RSAPublicKey) keyPair.getPublic())
                 .build();
-        OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(ISSUER);
+        OAuth2TokenValidator<Jwt> timestampValidator = JwtValidators.createDefault();
+        OAuth2TokenValidator<Jwt> issuerValidator = new GoogleIssuerValidator();
         OAuth2TokenValidator<Jwt> audienceValidator = new GoogleAudienceValidator(CLIENT_ID);
-        nimbusDecoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerValidator, audienceValidator));
+        nimbusDecoder.setJwtValidator(
+                new DelegatingOAuth2TokenValidator<>(timestampValidator, issuerValidator, audienceValidator));
         decoder = nimbusDecoder;
     }
 
@@ -138,5 +140,16 @@ class GoogleUserInfoProviderTest {
         CustomException exception = assertThrows(CustomException.class, () -> provider.fetchUserInfo(token));
 
         assertEquals(ErrorCode.AUTH_013, exception.getErrorCode());
+    }
+
+    @Test
+    void 스킴이_없는_issuer도_허용한다() throws Exception {
+        GoogleUserInfoProvider provider = new GoogleUserInfoProvider(decoder);
+        String token = signedToken(keyPair, "accounts.google.com", CLIENT_ID, "98765",
+                "test@gmail.com", true, Instant.now().plusSeconds(3600));
+
+        SocialUserInfo info = provider.fetchUserInfo(token);
+
+        assertEquals("98765", info.externalId());
     }
 }

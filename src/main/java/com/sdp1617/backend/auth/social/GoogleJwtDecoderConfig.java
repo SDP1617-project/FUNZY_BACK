@@ -14,15 +14,16 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 public class GoogleJwtDecoderConfig {
 
     private static final String GOOGLE_JWK_SET_URI = "https://www.googleapis.com/oauth2/v3/certs";
-    private static final String GOOGLE_ISSUER = "https://accounts.google.com";
 
     @Bean
     public JwtDecoder googleJwtDecoder(@Value("${google.client-id}") String googleClientId) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(GOOGLE_JWK_SET_URI).build();
 
-        OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(GOOGLE_ISSUER);
+        OAuth2TokenValidator<Jwt> timestampValidator = JwtValidators.createDefault();
+        OAuth2TokenValidator<Jwt> issuerValidator = new GoogleIssuerValidator();
         OAuth2TokenValidator<Jwt> audienceValidator = new GoogleAudienceValidator(googleClientId);
-        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerValidator, audienceValidator));
+        decoder.setJwtValidator(
+                new DelegatingOAuth2TokenValidator<>(timestampValidator, issuerValidator, audienceValidator));
 
         return decoder;
     }
