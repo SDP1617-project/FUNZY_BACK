@@ -30,7 +30,9 @@ public enum ErrorCode {
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
-    ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card.");
+    ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card."),
+
+    NOTIFICATION_001(HttpStatus.NOT_FOUND, "NOTIFICATION_001", "존재하지 않는 알림입니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

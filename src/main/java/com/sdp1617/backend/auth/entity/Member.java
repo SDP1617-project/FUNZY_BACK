@@ -55,6 +55,9 @@ public class Member {
     @Column(name = "provider_id", length = 255)
     private String providerId;
 
+    @Column(name = "push_notification_enabled", nullable = false)
+    private boolean pushNotificationEnabled;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -65,6 +68,7 @@ public class Member {
         this.termsAgreed = termsAgreed;
         this.failedLoginCount = 0;
         this.provider = AuthProvider.LOCAL;
+        this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -79,6 +83,7 @@ public class Member {
         this.failedLoginCount = 0;
         this.provider = provider;
         this.providerId = providerId;
+        this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -104,5 +109,9 @@ public class Member {
 
     public void changePassword(String newPassword) {
         this.password = newPassword;
+    }
+
+    public void updatePushNotificationEnabled(boolean pushNotificationEnabled) {
+        this.pushNotificationEnabled = pushNotificationEnabled;
     }
 }
