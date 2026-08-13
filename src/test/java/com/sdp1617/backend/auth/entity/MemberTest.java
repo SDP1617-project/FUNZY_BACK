@@ -96,5 +96,18 @@ class MemberTest {
         member.reissueFollowCode();
 
         assertNotEquals(firstCode, member.getFollowCode());
+    void 가입시_푸시_알림_수신은_기본으로_켜져있다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+
+        assertTrue(member.isPushNotificationEnabled());
+    }
+
+    @Test
+    void 푸시_알림_수신_설정을_변경할_수_있다() {
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+
+        member.updatePushNotificationEnabled(false);
+
+        assertFalse(member.isPushNotificationEnabled());
     }
 }

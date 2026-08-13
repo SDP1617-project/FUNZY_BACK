@@ -59,6 +59,8 @@ public class Member {
 
     @Column(name = "follow_code", nullable = false, unique = true, length = 12)
     private String followCode;
+    @Column(name = "push_notification_enabled", nullable = false)
+    private boolean pushNotificationEnabled;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -70,6 +72,7 @@ public class Member {
         this.termsAgreed = termsAgreed;
         this.failedLoginCount = 0;
         this.provider = AuthProvider.LOCAL;
+        this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -84,6 +87,7 @@ public class Member {
         this.failedLoginCount = 0;
         this.provider = provider;
         this.providerId = providerId;
+        this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -120,5 +124,7 @@ public class Member {
         if (this.followCode == null) {
             this.followCode = FollowCodeGenerator.generate();
         }
+    public void updatePushNotificationEnabled(boolean pushNotificationEnabled) {
+        this.pushNotificationEnabled = pushNotificationEnabled;
     }
 }
