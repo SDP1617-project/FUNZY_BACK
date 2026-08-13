@@ -30,7 +30,7 @@ public class FollowService {
     private final FollowRequestRepository followRequestRepository;
     private final FollowRelationRepository followRelationRepository;
 
-    @Value("${app.social.max-friend-count}")
+    @Value("${app.social.max-follow-count}")
     private int maxFollowCount;
 
     public FollowCodeResponse getMyFollowCode(Long memberId) {
