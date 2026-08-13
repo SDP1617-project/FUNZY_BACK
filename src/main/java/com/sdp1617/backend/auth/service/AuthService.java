@@ -70,6 +70,12 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_010);
         }
 
+        if (!member.hasPassword()) {
+            // 소셜 전용 계정 - 계정 존재 여부가 드러나지 않도록 일반 로그인 실패와 동일하게 처리
+            loginAttemptRecorder.recordFailure(member.getId());
+            throw new CustomException(ErrorCode.AUTH_001);
+        }
+
         if (!passwordEncoder.matches(request.password(), member.getPassword())) {
             loginAttemptRecorder.recordFailure(member.getId());
             throw new CustomException(ErrorCode.AUTH_001);
@@ -81,15 +87,18 @@ public class AuthService {
 
     @Transactional
     public void requestPasswordReset(String email) {
-        memberRepository.findByEmail(email).ifPresent(member -> {
-            String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
-            String link = frontendUrl + "/reset-password?token=" + token;
-            eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
-                    member.getEmail(),
-                    "비밀번호 재설정 안내",
-                    "아래 링크에서 비밀번호를 재설정해주세요 (15분간 유효):\n" + link
-            ));
-        });
+        // 소셜 전용 계정은 비밀번호가 없으므로 재설정 대상에서 제외 (계정 존재 여부가 드러나지 않도록 조용히 무시)
+        memberRepository.findByEmail(email)
+                .filter(Member::hasPassword)
+                .ifPresent(member -> {
+                    String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
+                    String link = frontendUrl + "/reset-password?token=" + token;
+                    eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+                            member.getEmail(),
+                            "비밀번호 재설정 안내",
+                            "아래 링크에서 비밀번호를 재설정해주세요 (15분간 유효):\n" + link
+                    ));
+                });
     }
 
     @Transactional
@@ -103,6 +112,10 @@ public class AuthService {
 
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
+
+        if (!member.hasPassword()) {
+            throw new CustomException(ErrorCode.AUTH_011);
+        }
 
         member.changePassword(passwordEncoder.encode(newPassword));
         member.unlock();
