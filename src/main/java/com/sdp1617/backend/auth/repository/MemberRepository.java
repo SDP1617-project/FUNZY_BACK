@@ -18,6 +18,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
 
     Optional<Member> findByProviderAndProviderId(AuthProvider provider, String providerId);
 
+    Optional<Member> findByFollowCode(String followCode);
+
     @Modifying
     @Query("update Member m set m.failedLoginCount = m.failedLoginCount + 1 where m.id = :id")
     int incrementFailedLoginCount(@Param("id") Long id);

@@ -1,0 +1,140 @@
+package com.sdp1617.backend.social.service;
+
+import com.sdp1617.backend.auth.entity.Member;
+import com.sdp1617.backend.auth.repository.MemberRepository;
+import com.sdp1617.backend.global.error.CustomException;
+import com.sdp1617.backend.global.error.ErrorCode;
+import com.sdp1617.backend.social.dto.FollowCodeResponse;
+import com.sdp1617.backend.social.dto.FollowCountResponse;
+import com.sdp1617.backend.social.dto.FollowRequestResponse;
+import com.sdp1617.backend.social.entity.FollowRelation;
+import com.sdp1617.backend.social.entity.FollowRequest;
+import com.sdp1617.backend.social.repository.FollowRelationRepository;
+import com.sdp1617.backend.social.repository.FollowRequestRepository;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class FollowService {
+
+    private final MemberRepository memberRepository;
+    private final FollowRequestRepository followRequestRepository;
+    private final FollowRelationRepository followRelationRepository;
+
+    @Value("${app.social.max-follow-count}")
+    private int maxFollowCount;
+
+    public FollowCodeResponse getMyFollowCode(Long memberId) {
+        Member member = getMember(memberId);
+        return new FollowCodeResponse(member.getFollowCode());
+    }
+
+    @Transactional
+    public FollowCodeResponse reissueFollowCode(Long memberId) {
+        Member member = getMember(memberId);
+        member.reissueFollowCode();
+        return new FollowCodeResponse(member.getFollowCode());
+    }
+
+    @Transactional
+    public void sendFollowRequest(Long requesterId, String followCode) {
+        Member receiver = memberRepository.findByFollowCode(followCode)
+                .orElseThrow(() -> new CustomException(ErrorCode.SOCIAL_001));
+        Long receiverId = receiver.getId();
+
+        if (receiverId.equals(requesterId)) {
+            throw new CustomException(ErrorCode.SOCIAL_002);
+        }
+        if (followRelationRepository.findBetween(requesterId, receiverId).isPresent()) {
+            throw new CustomException(ErrorCode.SOCIAL_003);
+        }
+        if (followRequestRepository.existsByRequesterIdAndReceiverId(requesterId, receiverId)) {
+            throw new CustomException(ErrorCode.SOCIAL_004);
+        }
+
+        // 상대가 이미 나에게 요청을 보낸 상태라면(교차 요청) 새 요청을 만들지 않고 바로 맞팔로 처리한다
+        Optional<FollowRequest> reverseRequest =
+                followRequestRepository.findByRequesterIdAndReceiverId(receiverId, requesterId);
+        if (reverseRequest.isPresent()) {
+            ensureUnderFollowLimit(requesterId, receiverId);
+            followRequestRepository.delete(reverseRequest.get());
+            followRelationRepository.save(FollowRelation.of(requesterId, receiverId));
+            return;
+        }
+
+        if (followRelationRepository.countByMember(requesterId) >= maxFollowCount) {
+            throw new CustomException(ErrorCode.SOCIAL_005);
+        }
+        followRequestRepository.save(new FollowRequest(requesterId, receiverId));
+    }
+
+    public List<FollowRequestResponse> getReceivedRequests(Long memberId) {
+        List<FollowRequest> requests = followRequestRepository.findByReceiverIdOrderByCreatedAtDesc(memberId);
+
+        List<Long> requesterIds = requests.stream().map(FollowRequest::getRequesterId).toList();
+        Map<Long, Member> requesterById = memberRepository.findAllById(requesterIds).stream()
+                .collect(Collectors.toMap(Member::getId, Function.identity()));
+
+        return requests.stream()
+                .map(request -> {
+                    Member requester = requesterById.get(request.getRequesterId());
+                    return new FollowRequestResponse(
+                            request.getId(), requester.getId(), requester.getNickname(), request.getCreatedAt());
+                })
+                .toList();
+    }
+
+    @Transactional
+    public void acceptFollowRequest(Long memberId, Long requestId) {
+        FollowRequest request = followRequestRepository.findById(requestId)
+                .filter(r -> r.isReceivedBy(memberId))
+                .orElseThrow(() -> new CustomException(ErrorCode.SOCIAL_006));
+
+        ensureUnderFollowLimit(request.getRequesterId(), memberId);
+
+        followRequestRepository.delete(request);
+        followRelationRepository.save(FollowRelation.of(request.getRequesterId(), memberId));
+    }
+
+    @Transactional
+    public void rejectFollowRequest(Long memberId, Long requestId) {
+        FollowRequest request = followRequestRepository.findById(requestId)
+                .filter(r -> r.isReceivedBy(memberId))
+                .orElseThrow(() -> new CustomException(ErrorCode.SOCIAL_006));
+
+        followRequestRepository.delete(request);
+    }
+
+    @Transactional
+    public void unfollow(Long memberId, Long followMemberId) {
+        FollowRelation relation = followRelationRepository.findBetween(memberId, followMemberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.SOCIAL_007));
+
+        followRelationRepository.delete(relation);
+    }
+
+    public FollowCountResponse getFollowCount(Long memberId) {
+        return new FollowCountResponse(followRelationRepository.countByMember(memberId), maxFollowCount);
+    }
+
+    private void ensureUnderFollowLimit(Long memberId1, Long memberId2) {
+        if (followRelationRepository.countByMember(memberId1) >= maxFollowCount
+                || followRelationRepository.countByMember(memberId2) >= maxFollowCount) {
+            throw new CustomException(ErrorCode.SOCIAL_005);
+        }
+    }
+
+    private Member getMember(Long memberId) {
+        return memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
+    }
+}

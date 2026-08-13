@@ -1,5 +1,6 @@
 package com.sdp1617.backend.auth.entity;
 
+import com.sdp1617.backend.auth.util.FollowCodeGenerator;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -7,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
@@ -55,6 +57,8 @@ public class Member {
     @Column(name = "provider_id", length = 255)
     private String providerId;
 
+    @Column(name = "follow_code", nullable = false, unique = true, length = 12)
+    private String followCode;
     @Column(name = "push_notification_enabled", nullable = false)
     private boolean pushNotificationEnabled;
 
@@ -109,6 +113,17 @@ public class Member {
 
     public void changePassword(String newPassword) {
         this.password = newPassword;
+    }
+
+    public void reissueFollowCode() {
+        this.followCode = FollowCodeGenerator.generate();
+    }
+
+    @PrePersist
+    private void assignFollowCodeIfMissing() {
+        if (this.followCode == null) {
+            this.followCode = FollowCodeGenerator.generate();
+        }
     }
 
     public void updatePushNotificationEnabled(boolean pushNotificationEnabled) {

@@ -1,0 +1,15 @@
+package com.sdp1617.backend.social.repository;
+
+import com.sdp1617.backend.social.entity.FollowRequest;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface FollowRequestRepository extends JpaRepository<FollowRequest, Long> {
+
+    boolean existsByRequesterIdAndReceiverId(Long requesterId, Long receiverId);
+
+    Optional<FollowRequest> findByRequesterIdAndReceiverId(Long requesterId, Long receiverId);
+
+    List<FollowRequest> findByReceiverIdOrderByCreatedAtDesc(Long receiverId);
+}
