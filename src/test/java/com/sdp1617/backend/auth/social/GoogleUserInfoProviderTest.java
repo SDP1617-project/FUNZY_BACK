@@ -25,7 +25,8 @@ class GoogleUserInfoProviderTest {
 
         server.expect(requestTo("https://oauth2.googleapis.com/tokeninfo?id_token=test-id-token"))
                 .andRespond(withSuccess(
-                        "{\"sub\":\"98765\",\"email\":\"test@gmail.com\",\"aud\":\"" + EXPECTED_CLIENT_ID + "\"}",
+                        "{\"sub\":\"98765\",\"email\":\"test@gmail.com\",\"aud\":\"" + EXPECTED_CLIENT_ID
+                                + "\",\"email_verified\":\"true\"}",
                         MediaType.APPLICATION_JSON
                 ));
 
@@ -33,6 +34,25 @@ class GoogleUserInfoProviderTest {
 
         assertEquals("98765", info.externalId());
         assertEquals("test@gmail.com", info.email());
+    }
+
+    @Test
+    void 이메일이_검증되지_않았으면_email이_null이다() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        GoogleUserInfoProvider provider = new GoogleUserInfoProvider(builder, EXPECTED_CLIENT_ID);
+
+        server.expect(requestTo("https://oauth2.googleapis.com/tokeninfo?id_token=test-id-token"))
+                .andRespond(withSuccess(
+                        "{\"sub\":\"98765\",\"email\":\"test@gmail.com\",\"aud\":\"" + EXPECTED_CLIENT_ID
+                                + "\",\"email_verified\":\"false\"}",
+                        MediaType.APPLICATION_JSON
+                ));
+
+        SocialUserInfo info = provider.fetchUserInfo("test-id-token");
+
+        assertEquals("98765", info.externalId());
+        assertEquals(null, info.email());
     }
 
     @Test

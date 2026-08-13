@@ -69,6 +69,9 @@ public class Member {
     }
 
     public Member(String email, String nickname, boolean termsAgreed, AuthProvider provider, String providerId) {
+        if (provider == AuthProvider.LOCAL || providerId == null || providerId.isBlank()) {
+            throw new IllegalArgumentException("소셜 회원은 LOCAL이 아닌 provider와 providerId가 필요합니다.");
+        }
         this.email = email;
         this.password = null;
         this.nickname = nickname;

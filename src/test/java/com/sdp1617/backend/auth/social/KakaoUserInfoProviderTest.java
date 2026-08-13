@@ -25,7 +25,7 @@ class KakaoUserInfoProviderTest {
         server.expect(requestTo("https://kapi.kakao.com/v2/user/me"))
                 .andExpect(header("Authorization", "Bearer test-token"))
                 .andRespond(withSuccess(
-                        "{\"id\":12345,\"kakao_account\":{\"email\":\"test@kakao.com\"}}",
+                        "{\"id\":12345,\"kakao_account\":{\"email\":\"test@kakao.com\",\"is_email_verified\":true}}",
                         MediaType.APPLICATION_JSON
                 ));
 
@@ -33,6 +33,24 @@ class KakaoUserInfoProviderTest {
 
         assertEquals("12345", info.externalId());
         assertEquals("test@kakao.com", info.email());
+    }
+
+    @Test
+    void 이메일이_검증되지_않았으면_email이_null이다() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        KakaoUserInfoProvider provider = new KakaoUserInfoProvider(builder);
+
+        server.expect(requestTo("https://kapi.kakao.com/v2/user/me"))
+                .andRespond(withSuccess(
+                        "{\"id\":12345,\"kakao_account\":{\"email\":\"test@kakao.com\",\"is_email_verified\":false}}",
+                        MediaType.APPLICATION_JSON
+                ));
+
+        SocialUserInfo info = provider.fetchUserInfo("test-token");
+
+        assertEquals("12345", info.externalId());
+        assertEquals(null, info.email());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.sdp1617.backend.auth.social;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
@@ -39,7 +40,8 @@ public class GoogleUserInfoProvider implements SocialUserInfoProvider {
                 throw new CustomException(ErrorCode.AUTH_013);
             }
 
-            return new SocialUserInfo(response.sub(), response.email());
+            String email = "true".equals(response.emailVerified()) ? response.email() : null;
+            return new SocialUserInfo(response.sub(), email);
         } catch (RestClientException e) {
             throw new CustomException(ErrorCode.AUTH_013);
         }
@@ -48,7 +50,8 @@ public class GoogleUserInfoProvider implements SocialUserInfoProvider {
     private record GoogleTokenInfoResponse(
             String sub,
             String email,
-            String aud
+            String aud,
+            @JsonProperty("email_verified") String emailVerified
     ) {
     }
 }

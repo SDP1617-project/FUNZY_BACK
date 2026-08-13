@@ -231,6 +231,31 @@ class AuthServiceTest {
     }
 
     @Test
+    void 비밀번호_재설정_요청시_소셜_전용_계정이면_조용히_무시한다() {
+        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        setId(member, 1L);
+        when(memberRepository.findByEmail("social@sdp1617.com")).thenReturn(Optional.of(member));
+
+        authService.requestPasswordReset("social@sdp1617.com");
+
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(verificationTokenRepository, never()).issue(any(), any(), any());
+    }
+
+    @Test
+    void 소셜_전용_계정이_비밀번호_재설정_토큰을_가지고_있어도_AUTH_011_예외를_던진다() {
+        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        setId(member, 1L);
+        when(verificationTokenRepository.consume("password-reset", "token-value")).thenReturn(Optional.of(1L));
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> authService.resetPassword("token-value", "NewPassword1!", "NewPassword1!"));
+
+        assertEquals(ErrorCode.AUTH_011, exception.getErrorCode());
+    }
+
+    @Test
     void 비밀번호_재설정_요청시_존재하지_않는_이메일이면_조용히_무시한다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 

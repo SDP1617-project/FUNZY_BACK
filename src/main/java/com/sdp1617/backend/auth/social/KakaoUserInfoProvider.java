@@ -36,7 +36,10 @@ public class KakaoUserInfoProvider implements SocialUserInfoProvider {
                 throw new CustomException(ErrorCode.AUTH_013);
             }
 
-            String email = response.kakaoAccount() != null ? response.kakaoAccount().email() : null;
+            KakaoAccount account = response.kakaoAccount();
+            String email = (account != null && Boolean.TRUE.equals(account.isEmailVerified()))
+                    ? account.email()
+                    : null;
             return new SocialUserInfo(String.valueOf(response.id()), email);
         } catch (RestClientException e) {
             throw new CustomException(ErrorCode.AUTH_013);
@@ -50,7 +53,8 @@ public class KakaoUserInfoProvider implements SocialUserInfoProvider {
     }
 
     private record KakaoAccount(
-            String email
+            String email,
+            @JsonProperty("is_email_verified") Boolean isEmailVerified
     ) {
     }
 }

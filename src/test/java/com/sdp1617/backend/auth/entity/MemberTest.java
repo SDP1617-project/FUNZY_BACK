@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MemberTest {
@@ -69,5 +70,19 @@ class MemberTest {
         assertFalse(member.hasPassword());
         assertEquals(AuthProvider.KAKAO, member.getProvider());
         assertEquals("12345", member.getProviderId());
+    }
+
+    @Test
+    void 소셜_가입_회원은_providerId가_없으면_예외를_던진다() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, ""));
+    }
+
+    @Test
+    void 소셜_가입_생성자에_LOCAL_provider를_넘기면_예외를_던진다() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new Member("test@sdp1617.com", "닉네임", true, AuthProvider.LOCAL, "12345"));
     }
 }
