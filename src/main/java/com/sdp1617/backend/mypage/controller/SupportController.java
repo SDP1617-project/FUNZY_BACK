@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/mypage/support")
-@Tag(name = "마이페이지 - 고객 지원", description = "약관/정책 링크, 앱 버전 조회 API")
+@Tag(name = "마이페이지 - 고객 지원", description = "약관/정책 링크 조회 API")
 public class SupportController {
 
     @Value("${app.support.terms-of-service-url}")
