@@ -13,6 +13,7 @@ public record CardCreateRequest(
         @NotNull ArchiveCategory category,
         String link,
         String linkTitle,
-        @NotBlank String content
+        @NotBlank String content,
+        String imageKey
 ) {
 }

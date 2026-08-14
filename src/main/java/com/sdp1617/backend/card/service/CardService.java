@@ -258,9 +258,19 @@ public class CardService {
                 request.linkTitle(),
                 request.content()
         );
+        applyImageIfPresent(request.senderId(), request.imageKey(), card);
         Card savedCard = cardRepository.save(card);
 
         return CardResponse.from(savedCard, createShareUrl(savedCard.getId()));
+    }
+
+    private void applyImageIfPresent(Long senderId, String imageKey, Card card) {
+        if (imageKey == null || imageKey.isBlank()) {
+            return;
+        }
+        validateImageKeyOwner(senderId, imageKey);
+        validateUploadedImageExists(imageKey);
+        card.updateImage(imageKey, createImageUrl(imageKey));
     }
 
     private Envelop createEnvelop(CardCreateRequest request) {
