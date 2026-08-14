@@ -16,6 +16,8 @@ import com.sdp1617.backend.card.dto.response.CursorPageResponse;
 import com.sdp1617.backend.card.entity.Card;
 import com.sdp1617.backend.card.entity.Envelop;
 import com.sdp1617.backend.card.repository.CardRepository;
+import com.sdp1617.backend.card.repository.CardRepository.CalendarImageProjection;
+import com.sdp1617.backend.card.repository.CardRepository.FolderSummaryProjection;
 import com.sdp1617.backend.card.repository.EnvelopRepository;
 import com.sdp1617.backend.global.config.properties.S3Properties;
 import com.sdp1617.backend.global.error.CustomException;
@@ -24,10 +26,16 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -40,13 +48,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -58,7 +67,14 @@ public class CardService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
+    private static final int IMAGE_SIGNATURE_READ_BYTES = 16;
+    private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
     private static final LocalDateTime EMPTY_CREATED_AT = LocalDateTime.MIN;
+    private static final Set<String> ALLOWED_IMAGE_CONTENT_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+    );
 
     private final EnvelopRepository envelopRepository;
     private final CardRepository cardRepository;
@@ -75,15 +91,16 @@ public class CardService {
             CardImagePresignedUrlRequest request
     ) {
         validateS3Properties();
-        validateImageContentType(request.contentType());
+        String contentType = normalizeContentType(request.contentType());
+        validateImageContentType(contentType);
 
-        String imageKey = createImageKey(senderId, request.fileName());
+        String imageKey = createImageKey(senderId, contentType);
         Instant expiresAt = Instant.now()
                 .plus(Duration.ofMinutes(s3Properties.presignedUrlExpirationMinutes()));
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(s3Properties.bucket())
                 .key(imageKey)
-                .contentType(request.contentType())
+                .contentType(contentType)
                 .build();
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofMinutes(s3Properties.presignedUrlExpirationMinutes()))
@@ -100,21 +117,6 @@ public class CardService {
         );
     }
 
-    public List<CardStorageResponse> getCards(
-            Long memberId,
-            CardBoxType type,
-            LocalDate date,
-            String keyword
-    ) {
-        return findCardsByType(memberId, type)
-                .stream()
-                .filter(card -> matchesDate(card, date))
-                .filter(card -> matchesKeyword(card, keyword))
-                .sorted(cardCursorComparator())
-                .map(CardStorageResponse::from)
-                .toList();
-    }
-
     public CursorPageResponse<CardStorageResponse> getCards(
             Long memberId,
             CardBoxType type,
@@ -124,24 +126,25 @@ public class CardService {
             int size
     ) {
         CursorKey cursorKey = parseCursor(cursor);
-        List<CardStorageResponse> cards = findCardsByType(memberId, type)
+        int pageSize = normalizePageSize(size);
+        List<CardStorageResponse> cards = findCardsByType(
+                memberId,
+                type,
+                dateStartAt(date),
+                dateEndAt(date),
+                normalizeKeyword(keyword),
+                cursorKey,
+                PageRequest.of(0, pageSize + 1)
+        )
                 .stream()
-                .filter(card -> matchesDate(card, date))
-                .filter(card -> matchesKeyword(card, keyword))
-                .sorted(cardCursorComparator())
-                .filter(card -> isAfterCursor(card.getCreatedAt(), card.getId(), cursorKey))
                 .map(CardStorageResponse::from)
                 .toList();
 
         return toCursorPage(
                 cards,
-                normalizePageSize(size),
+                pageSize,
                 response -> new CursorKey(response.createdAt(), response.cardId())
         );
-    }
-
-    public List<CardFolderResponse> getFolders(Long memberId, CardBoxType type) {
-        return buildFolders(memberId, type);
     }
 
     public CursorPageResponse<CardFolderResponse> getFolders(
@@ -151,61 +154,32 @@ public class CardService {
             int size
     ) {
         CursorKey cursorKey = parseCursor(cursor);
-        List<CardFolderResponse> folders = buildFolders(memberId, type)
-                .stream()
-                .filter(folder -> isAfterCursor(folder.latestCardCreatedAt(), folder.memberId(), cursorKey))
-                .toList();
+        int pageSize = normalizePageSize(size);
+        List<CardFolderResponse> folders = findFolderSummaries(
+                memberId,
+                type,
+                cursorKey,
+                PageRequest.of(0, pageSize + 1)
+        );
 
         return toCursorPage(
                 folders,
-                normalizePageSize(size),
+                pageSize,
                 response -> new CursorKey(response.latestCardCreatedAt(), response.memberId())
         );
     }
 
-    private List<CardFolderResponse> buildFolders(Long memberId, CardBoxType type) {
-        Function<Card, Member> folderMemberExtractor = type == CardBoxType.SENT
-                ? card -> card.getEnvelop().getReceiver()
-                : card -> card.getEnvelop().getSender();
-
-        Map<Long, List<Card>> cardsByMember = findCardsByType(memberId, type)
-                .stream()
-                .collect(LinkedHashMap::new,
-                        (map, card) -> map.computeIfAbsent(folderMemberExtractor.apply(card).getId(), key -> new java.util.ArrayList<>()).add(card),
-                        LinkedHashMap::putAll);
-
-        return cardsByMember.values()
-                .stream()
-                .map(cards -> {
-                    Card latestCard = cards.stream()
-                            .max(Comparator.comparing(Card::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
-                            .orElseThrow();
-                    Member member = folderMemberExtractor.apply(latestCard);
-                    return new CardFolderResponse(
-                            member.getId(),
-                            member.getNickname(),
-                            cards.size(),
-                            latestCard.getImageUrl(),
-                            latestCard.getCreatedAt()
-                    );
-                })
-                .sorted(Comparator
-                        .comparing(CardFolderResponse::latestCardCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(CardFolderResponse::memberId, Comparator.reverseOrder()))
-                .toList();
-    }
-
     public CardCalendarResponse getCalendar(Long memberId, CardBoxType type, int year, int month) {
         YearMonth yearMonth = YearMonth.of(year, month);
-        Map<LocalDate, List<String>> imageUrlsByDate = findCardsByType(memberId, type)
+        LocalDateTime startAt = yearMonth.atDay(1).atStartOfDay();
+        LocalDateTime endAt = yearMonth.plusMonths(1).atDay(1).atStartOfDay();
+        Map<LocalDate, List<String>> imageUrlsByDate = findCalendarImages(memberId, type, startAt, endAt)
                 .stream()
-                .filter(card -> card.getCreatedAt() != null)
-                .filter(card -> YearMonth.from(card.getCreatedAt()).equals(yearMonth))
                 .collect(LinkedHashMap::new,
-                        (map, card) -> map.computeIfAbsent(
-                                card.getCreatedAt().toLocalDate(),
+                        (map, image) -> map.computeIfAbsent(
+                                image.getCreatedAt().toLocalDate(),
                                 key -> new java.util.ArrayList<>()
-                        ).add(card.getImageUrl()),
+                        ).add(image.getImageUrl()),
                         LinkedHashMap::putAll);
 
         List<CardCalendarDayResponse> days = imageUrlsByDate.entrySet()
@@ -233,7 +207,7 @@ public class CardService {
             CardImageUploadCompleteRequest request
     ) {
         validateImageKeyOwner(senderId, request.imageKey());
-        validateUploadedImageExists(request.imageKey());
+        validateUploadedImage(request.imageKey());
         Card card = findWrittenCard(senderId, cardId);
         card.updateImage(request.imageKey(), createImageUrl(request.imageKey()));
         return CardListResponse.from(card);
@@ -247,7 +221,8 @@ public class CardService {
 
     @Transactional
     public CardResponse createCard(CardCreateRequest request){
-        Envelop envelop = envelopRepository.findBySender_Id(request.senderId())
+        validateEnvelopCreateFields(request);
+        Envelop envelop = envelopRepository.findBySender_IdAndReceiver_Id(request.senderId(), request.receiverId())
                 .orElseGet(() -> createEnvelop(request));
 
         Card card = Card.create(
@@ -269,13 +244,11 @@ public class CardService {
             return;
         }
         validateImageKeyOwner(senderId, imageKey);
-        validateUploadedImageExists(imageKey);
+        validateUploadedImage(imageKey);
         card.updateImage(imageKey, createImageUrl(imageKey));
     }
 
     private Envelop createEnvelop(CardCreateRequest request) {
-        validateEnvelopCreateFields(request);
-
         Member sender = entityManager.getReference(Member.class, request.senderId());
         Member receiver = entityManager.getReference(Member.class, request.receiverId());
 
@@ -303,35 +276,134 @@ public class CardService {
                 .orElseThrow(() -> new CustomException(ErrorCode.CARD_001));
     }
 
-    private List<Card> findCardsByType(Long memberId, CardBoxType type) {
+    private List<Card> findCardsByType(
+            Long memberId,
+            CardBoxType type,
+            LocalDateTime startAt,
+            LocalDateTime endAt,
+            String keyword,
+            CursorKey cursorKey,
+            Pageable pageable
+    ) {
         if (type == CardBoxType.RECEIVED) {
-            return cardRepository.findByEnvelop_Receiver_IdOrderByCreatedAtDescIdDesc(memberId);
+            return cardRepository.findReceivedCards(
+                    memberId,
+                    startAt,
+                    endAt,
+                    keyword,
+                    cursorCreatedAt(cursorKey),
+                    cursorId(cursorKey),
+                    EMPTY_CREATED_AT,
+                    pageable
+            );
         }
-        return cardRepository.findByEnvelop_Sender_IdOrderByCreatedAtDescIdDesc(memberId);
+        return cardRepository.findSentCards(
+                memberId,
+                startAt,
+                endAt,
+                keyword,
+                cursorCreatedAt(cursorKey),
+                cursorId(cursorKey),
+                EMPTY_CREATED_AT,
+                pageable
+        );
     }
 
-    private boolean matchesDate(Card card, LocalDate date) {
-        return date == null || (card.getCreatedAt() != null && card.getCreatedAt().toLocalDate().equals(date));
+    private List<CardFolderResponse> findFolderSummaries(
+            Long memberId,
+            CardBoxType type,
+            CursorKey cursorKey,
+            Pageable pageable
+    ) {
+        List<FolderSummaryProjection> summaries = type == CardBoxType.RECEIVED
+                ? cardRepository.findReceivedFolderSummaries(
+                        memberId,
+                        cursorCreatedAt(cursorKey),
+                        cursorId(cursorKey),
+                        EMPTY_CREATED_AT,
+                        pageable
+                )
+                : cardRepository.findSentFolderSummaries(
+                        memberId,
+                        cursorCreatedAt(cursorKey),
+                        cursorId(cursorKey),
+                        EMPTY_CREATED_AT,
+                        pageable
+                );
+
+        return summaries.stream()
+                .map(summary -> new CardFolderResponse(
+                        summary.getMemberId(),
+                        summary.getNickname(),
+                        summary.getCardCount(),
+                        findLatestFolderImageUrl(memberId, type, summary.getMemberId()),
+                        restoreEmptyCreatedAt(summary.getLatestCardCreatedAt())
+                ))
+                .toList();
     }
 
-    private boolean matchesKeyword(Card card, String keyword) {
+    private String findLatestFolderImageUrl(Long memberId, CardBoxType type, Long folderMemberId) {
+        List<String> imageUrls = type == CardBoxType.RECEIVED
+                ? cardRepository.findLatestReceivedFolderImageUrl(
+                        memberId,
+                        folderMemberId,
+                        EMPTY_CREATED_AT,
+                        PageRequest.of(0, 1)
+                )
+                : cardRepository.findLatestSentFolderImageUrl(
+                        memberId,
+                        folderMemberId,
+                        EMPTY_CREATED_AT,
+                        PageRequest.of(0, 1)
+                );
+        return imageUrls.isEmpty() ? null : imageUrls.get(0);
+    }
+
+    private List<CalendarImageProjection> findCalendarImages(
+            Long memberId,
+            CardBoxType type,
+            LocalDateTime startAt,
+            LocalDateTime endAt
+    ) {
+        if (type == CardBoxType.RECEIVED) {
+            return cardRepository.findReceivedCalendarImages(memberId, startAt, endAt);
+        }
+        return cardRepository.findSentCalendarImages(memberId, startAt, endAt);
+    }
+
+    private LocalDateTime dateStartAt(LocalDate date) {
+        return date == null ? null : date.atStartOfDay();
+    }
+
+    private LocalDateTime dateEndAt(LocalDate date) {
+        return date == null ? null : date.plusDays(1).atStartOfDay();
+    }
+
+    private String normalizeKeyword(String keyword) {
         if (keyword == null || keyword.isBlank()) {
-            return true;
+            return null;
         }
-        String normalizedKeyword = keyword.trim().toLowerCase(Locale.ROOT);
-        return contains(card.getTitle(), normalizedKeyword)
-                || contains(card.getContent(), normalizedKeyword)
-                || contains(card.getEnvelop().getSender().getNickname(), normalizedKeyword)
-                || contains(card.getEnvelop().getReceiver().getNickname(), normalizedKeyword);
+        return "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
     }
 
-    private boolean contains(String value, String keyword) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(keyword);
+    private LocalDateTime cursorCreatedAt(CursorKey cursorKey) {
+        return cursorKey == null ? null : cursorKey.createdAt();
+    }
+
+    private Long cursorId(CursorKey cursorKey) {
+        return cursorKey == null ? null : cursorKey.id();
+    }
+
+    private LocalDateTime restoreEmptyCreatedAt(LocalDateTime createdAt) {
+        return EMPTY_CREATED_AT.equals(createdAt) ? null : createdAt;
     }
 
     private void validateS3Properties() {
         if (s3Properties.bucket() == null || s3Properties.bucket().isBlank()) {
             throw new CustomException(ErrorCode.COMMON_999, "S3 bucket 설정이 필요합니다.");
+        }
+        if (s3Properties.staticRegion() == null || s3Properties.staticRegion().isBlank()) {
+            throw new CustomException(ErrorCode.COMMON_999, "S3 region 설정이 필요합니다.");
         }
         if (s3Properties.presignedUrlExpirationMinutes() <= 0) {
             throw new CustomException(ErrorCode.COMMON_999, "S3 presigned URL 만료 시간 설정이 올바르지 않습니다.");
@@ -339,15 +411,23 @@ public class CardService {
     }
 
     private void validateImageContentType(String contentType) {
-        if (!contentType.toLowerCase().startsWith("image/")) {
-            throw new CustomException(ErrorCode.COMMON_002, "이미지 파일만 업로드할 수 있습니다.");
+        if (!ALLOWED_IMAGE_CONTENT_TYPES.contains(contentType)) {
+            throw new CustomException(ErrorCode.CARD_003);
         }
     }
 
-    private void validateUploadedImageExists(String imageKey) {
+    private void validateUploadedImage(String imageKey) {
         validateS3Properties();
+        HeadObjectResponse objectMetadata = getImageObjectMetadata(imageKey);
+        String contentType = normalizeContentType(objectMetadata.contentType());
+        validateImageContentType(contentType);
+        validateImageSize(objectMetadata.contentLength());
+        validateImageSignature(imageKey, contentType);
+    }
+
+    private HeadObjectResponse getImageObjectMetadata(String imageKey) {
         try {
-            s3Client.headObject(HeadObjectRequest.builder()
+            return s3Client.headObject(HeadObjectRequest.builder()
                     .bucket(s3Properties.bucket())
                     .key(imageKey)
                     .build());
@@ -359,37 +439,112 @@ public class CardService {
         }
     }
 
+    private void validateImageSize(Long contentLength) {
+        if (contentLength == null || contentLength <= 0) {
+            throw new CustomException(ErrorCode.CARD_003);
+        }
+        if (contentLength > MAX_IMAGE_SIZE_BYTES) {
+            throw new CustomException(ErrorCode.CARD_004);
+        }
+    }
+
+    private void validateImageSignature(String imageKey, String contentType) {
+        byte[] signature = readImageSignature(imageKey);
+        boolean valid = switch (contentType) {
+            case "image/jpeg" -> isJpeg(signature);
+            case "image/png" -> isPng(signature);
+            case "image/webp" -> isWebp(signature);
+            default -> false;
+        };
+        if (!valid) {
+            throw new CustomException(ErrorCode.CARD_003);
+        }
+    }
+
+    private byte[] readImageSignature(String imageKey) {
+        try (ResponseInputStream<GetObjectResponse> object = s3Client.getObject(GetObjectRequest.builder()
+                .bucket(s3Properties.bucket())
+                .key(imageKey)
+                .range("bytes=0-" + (IMAGE_SIGNATURE_READ_BYTES - 1))
+                .build())) {
+            return object.readNBytes(IMAGE_SIGNATURE_READ_BYTES);
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) {
+                throw new CustomException(ErrorCode.CARD_002);
+            }
+            throw exception;
+        } catch (IOException exception) {
+            throw new CustomException(ErrorCode.CARD_003);
+        }
+    }
+
+    private boolean isJpeg(byte[] signature) {
+        return signature.length >= 3
+                && (signature[0] & 0xFF) == 0xFF
+                && (signature[1] & 0xFF) == 0xD8
+                && (signature[2] & 0xFF) == 0xFF;
+    }
+
+    private boolean isPng(byte[] signature) {
+        int[] pngSignature = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        if (signature.length < pngSignature.length) {
+            return false;
+        }
+        for (int i = 0; i < pngSignature.length; i++) {
+            if ((signature[i] & 0xFF) != pngSignature[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isWebp(byte[] signature) {
+        return signature.length >= 12
+                && signature[0] == 'R'
+                && signature[1] == 'I'
+                && signature[2] == 'F'
+                && signature[3] == 'F'
+                && signature[8] == 'W'
+                && signature[9] == 'E'
+                && signature[10] == 'B'
+                && signature[11] == 'P';
+    }
+
     private void validateImageKeyOwner(Long senderId, String imageKey) {
         if (!imageKey.startsWith(imageKeyPrefix(senderId))) {
             throw new CustomException(ErrorCode.COMMON_004);
         }
     }
 
-    private String createImageKey(Long senderId, String fileName) {
-        return imageKeyPrefix(senderId) + UUID.randomUUID() + extractExtension(fileName);
+    private String createImageKey(Long senderId, String contentType) {
+        return imageKeyPrefix(senderId) + UUID.randomUUID() + extensionFor(contentType);
     }
 
     private String imageKeyPrefix(Long senderId) {
         return "cards/" + senderId + "/";
     }
 
-    private String extractExtension(String fileName) {
-        int dotIndex = fileName.lastIndexOf('.');
-        if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
-            return "";
+    private String extensionFor(String contentType) {
+        return switch (contentType) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> throw new CustomException(ErrorCode.CARD_003);
+        };
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (contentType == null) {
+            throw new CustomException(ErrorCode.CARD_003);
         }
-        String extension = fileName.substring(dotIndex).toLowerCase();
-        if (!extension.matches("\\.[a-z0-9]{1,10}")) {
-            return "";
-        }
-        return extension;
+        return contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
     }
 
     private String createImageUrl(String imageKey) {
         if (s3Properties.publicBaseUrl() != null && !s3Properties.publicBaseUrl().isBlank()) {
             return s3Properties.publicBaseUrl().replaceAll("/$", "") + "/" + imageKey;
         }
-        return "https://" + s3Properties.bucket() + ".s3." + s3Properties.region() + ".amazonaws.com/" + imageKey;
+        return "https://" + s3Properties.bucket() + ".s3." + s3Properties.staticRegion() + ".amazonaws.com/" + imageKey;
     }
 
     private String createShareUrl(Long cardId) {
@@ -412,18 +567,6 @@ public class CardService {
         List<T> pageItems = hasNext ? items.subList(0, size) : items;
         String nextCursor = hasNext ? encodeCursor(cursorExtractor.apply(pageItems.get(pageItems.size() - 1))) : null;
         return new CursorPageResponse<>(pageItems, nextCursor, hasNext);
-    }
-
-    private boolean isAfterCursor(LocalDateTime createdAt, Long id, CursorKey cursorKey) {
-        if (cursorKey == null) {
-            return true;
-        }
-        LocalDateTime normalizedCreatedAt = normalizeCreatedAt(createdAt);
-        int createdAtCompare = normalizedCreatedAt.compareTo(cursorKey.createdAt());
-        if (createdAtCompare < 0) {
-            return true;
-        }
-        return createdAtCompare == 0 && id < cursorKey.id();
     }
 
     private String encodeCursor(CursorKey cursorKey) {
@@ -452,12 +595,6 @@ public class CardService {
 
     private LocalDateTime normalizeCreatedAt(LocalDateTime createdAt) {
         return createdAt == null ? EMPTY_CREATED_AT : createdAt;
-    }
-
-    private Comparator<Card> cardCursorComparator() {
-        return Comparator
-                .comparing(Card::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(Card::getId, Comparator.reverseOrder());
     }
 
     private record CursorKey(

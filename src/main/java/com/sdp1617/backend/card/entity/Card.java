@@ -34,7 +34,7 @@ public class Card {
     @Column(name="link_title")
     private String linkTitle;
 
-    @Column(nullable=false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
     @Column(name = "image_key", length = 500)

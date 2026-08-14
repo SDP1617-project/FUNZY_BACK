@@ -39,11 +39,19 @@ app:
     privacy-policy-url: ${PRIVACY_POLICY_URL:https://sdp1617.example.com/privacy}
   social:
     max-follow-count: ${MAX_FOLLOW_COUNT:50}
-  s3:
-    bucket: ${AWS_S3_BUCKET:}
-    region: ${AWS_REGION:ap-northeast-2}
-    public-base-url: ${AWS_S3_PUBLIC_BASE_URL:}
-    presigned-url-expiration-minutes: ${AWS_S3_PRESIGNED_URL_EXPIRATION_MINUTES:10}
+
+cloud:
+  aws:
+    credentials:
+      access-key: ${AWS_ACCESS_KEY_ID:}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:}
+    region:
+      static: ${AWS_REGION:ap-northeast-2}
+    s3:
+      bucket: ${AWS_S3_BUCKET:sdp-funzy}
+      presigned-url-expiration-minutes: ${AWS_S3_PRESIGNED_URL_EXPIRATION_MINUTES:10}
+    stack:
+      auto: false
 
 google:
   client-id: ${GOOGLE_CLIENT_ID:68223418406-g2sdcb7dj9kl8rnl2emp1eg8kfbp08el.apps.googleusercontent.com}
