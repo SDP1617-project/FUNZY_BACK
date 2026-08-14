@@ -1,10 +1,12 @@
 package com.sdp1617.backend.card.entity;
 
-import com.sdp1617.backend.card.dto.Category;
+import com.sdp1617.backend.archive.entity.ArchiveCategory;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
 
 @Entity
 @Getter
@@ -24,7 +26,7 @@ public class Card {
 
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
-    private Category category;
+    private ArchiveCategory category;
 
     @Column
     private String link;
@@ -35,7 +37,16 @@ public class Card {
     @Column(nullable=false)
     private String content;
 
-    private Card(Envelop envelop, String title, Category category, String link, String linkTitle, String content) {
+    @Column(name = "image_key", length = 500)
+    private String imageKey;
+
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
+
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    private Card(Envelop envelop, String title, ArchiveCategory category, String link, String linkTitle, String content) {
         this.envelop = envelop;
         this.title = title;
         this.category = category;
@@ -47,11 +58,23 @@ public class Card {
     public static Card create(
             Envelop envelop,
             String title,
-            Category category,
+            ArchiveCategory category,
             String link,
             String linkTitle,
             String content
     ) {
         return new Card(envelop, title, category, link, linkTitle, content);
+    }
+
+    public void updateImage(String imageKey, String imageUrl) {
+        this.imageKey = imageKey;
+        this.imageUrl = imageUrl;
+    }
+
+    @PrePersist
+    private void assignCreatedAt() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
     }
 }

@@ -1,17 +1,36 @@
 package com.sdp1617.backend.card.controller;
 
-import com.sdp1617.backend.card.dto.request.EnvelopCreateRequest;
+import com.sdp1617.backend.card.dto.CardBoxType;
+import com.sdp1617.backend.card.dto.request.CardCreateRequest;
+import com.sdp1617.backend.card.dto.request.CardImagePresignedUrlRequest;
+import com.sdp1617.backend.card.dto.request.CardImageUploadCompleteRequest;
+import com.sdp1617.backend.card.dto.response.CardCalendarResponse;
+import com.sdp1617.backend.card.dto.response.CardFolderResponse;
+import com.sdp1617.backend.card.dto.response.CardImagePresignedUrlResponse;
+import com.sdp1617.backend.card.dto.response.CardListResponse;
 import com.sdp1617.backend.card.dto.response.CardResponse;
+import com.sdp1617.backend.card.dto.response.CardStorageResponse;
+import com.sdp1617.backend.card.dto.response.CursorPageResponse;
 import com.sdp1617.backend.card.service.CardService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/cards")
@@ -21,9 +40,86 @@ public class CardController {
 
     private final CardService cardService;
 
+    @PostMapping("/images/presigned-url")
+    @Operation(summary="마음카드 이미지 업로드용 Presigned URL 발급")
+    public ResponseEntity<CardImagePresignedUrlResponse> issueImagePresignedUrl(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody CardImagePresignedUrlRequest request
+    ){
+        return ResponseEntity.ok(cardService.issueImagePresignedUrl(memberId, request));
+    }
+
+    @GetMapping
+    @Operation(summary="마음카드 보관함 목록 조회")
+    public ResponseEntity<CursorPageResponse<CardStorageResponse>> getCards(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "조회함 유형", example = "RECEIVED") @RequestParam(defaultValue = "SENT") CardBoxType type,
+            @Parameter(description = "조회 날짜", example = "2026-08-14")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @RequestParam(required = false) LocalDate date,
+            @Parameter(description = "검색어. 제목, 내용, 발신자/수신자 닉네임 검색", example = "YESEUNG")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "다음 페이지 조회용 커서", example = "MjAyNi0wOC0xNFQxMzowMDowMHwx")
+            @RequestParam(required = false) String cursor,
+            @Parameter(description = "페이지 크기", example = "20") @RequestParam(defaultValue = "20") int size
+    ){
+        return ResponseEntity.ok(cardService.getCards(memberId, type, date, keyword, cursor, size));
+    }
+
+    @GetMapping("/folders")
+    @Operation(summary="마음카드 보관함 폴더 조회")
+    public ResponseEntity<CursorPageResponse<CardFolderResponse>> getFolders(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "조회함 유형", example = "RECEIVED") @RequestParam(defaultValue = "RECEIVED") CardBoxType type,
+            @Parameter(description = "다음 페이지 조회용 커서", example = "MjAyNi0wOC0xNFQxMzowMDowMHwx")
+            @RequestParam(required = false) String cursor,
+            @Parameter(description = "페이지 크기", example = "20") @RequestParam(defaultValue = "20") int size
+    ){
+        return ResponseEntity.ok(cardService.getFolders(memberId, type, cursor, size));
+    }
+
+    @GetMapping("/calendar")
+    @Operation(summary="마음카드 보관함 월별 캘린더 요약 조회")
+    public ResponseEntity<CardCalendarResponse> getCalendar(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "조회함 유형", example = "RECEIVED") @RequestParam(defaultValue = "RECEIVED") CardBoxType type,
+            @Parameter(description = "조회 연도", example = "2026") @RequestParam int year,
+            @Parameter(description = "조회 월", example = "8") @RequestParam int month
+    ){
+        return ResponseEntity.ok(cardService.getCalendar(memberId, type, year, month));
+    }
+
+    @GetMapping("/{cardId}")
+    @Operation(summary="특정 마음카드 조회")
+    public ResponseEntity<CardStorageResponse> getCard(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "조회할 마음카드 ID", example = "1") @PathVariable Long cardId
+    ){
+        return ResponseEntity.ok(cardService.getCard(memberId, cardId));
+    }
+
+    @PostMapping("/{cardId}/image/complete")
+    @Operation(summary="마음카드 이미지 업로드 완료")
+    public ResponseEntity<CardListResponse> completeImageUpload(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "이미지를 연결할 마음카드 ID", example = "1") @PathVariable Long cardId,
+            @Valid @RequestBody CardImageUploadCompleteRequest request
+    ){
+        return ResponseEntity.ok(cardService.completeImageUpload(memberId, cardId, request));
+    }
+
+    @DeleteMapping("/{cardId}")
+    @Operation(summary="내가 작성한 마음카드 삭제")
+    public ResponseEntity<Void> deleteWrittenCard(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "삭제할 마음카드 ID", example = "1") @PathVariable Long cardId
+    ){
+        cardService.deleteWrittenCard(memberId, cardId);
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/create")
     @Operation(summary="마음카드 생성")
-    public ResponseEntity<CardResponse> createCard(@Valid @RequestBody EnvelopCreateRequest request){
+    public ResponseEntity<CardResponse> createCard(@Valid @RequestBody CardCreateRequest request){
         return ResponseEntity.ok(cardService.createCard(request));
     }
 }

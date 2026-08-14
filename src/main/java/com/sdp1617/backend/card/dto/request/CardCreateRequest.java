@@ -5,10 +5,10 @@ import com.sdp1617.backend.card.dto.DesignType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-public record EnvelopCreateRequest(
+public record CardCreateRequest(
         @NotNull Long senderId,
-        @NotNull Long receiverId,
-        @NotNull DesignType designType,
+        Long receiverId,
+        DesignType designType,
         @NotBlank String title,
         @NotNull ArchiveCategory category,
         String link,
