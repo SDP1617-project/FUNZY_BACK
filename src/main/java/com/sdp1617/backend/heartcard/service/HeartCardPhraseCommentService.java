@@ -1,5 +1,7 @@
 package com.sdp1617.backend.heartcard.service;
 
+import com.sdp1617.backend.funzypack.entity.FunzyPackCard;
+import com.sdp1617.backend.funzypack.repository.FunzyPackCardRepository;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.heartcard.dto.HeartCardPhraseCommentCreateRequest;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class HeartCardPhraseCommentService {
 
     private final HeartCardPhraseCommentRepository heartCardPhraseCommentRepository;
+    private final FunzyPackCardRepository funzyPackCardRepository;
 
     public HeartCardPhraseCommentListResponse getComments(Long memberId, Long heartCardId) {
         requireLogin(memberId);
@@ -41,6 +44,9 @@ public class HeartCardPhraseCommentService {
     ) {
         requireLogin(memberId);
         validateRange(request.startOffset(), request.endOffset());
+        FunzyPackCard heartCard = funzyPackCardRepository.findByHeartCardIdForUpdate(heartCardId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_001));
+        validateSelectedText(heartCard, request);
         if (heartCardPhraseCommentRepository.existsOverlappingRange(heartCardId, request.startOffset(), request.endOffset())) {
             throw new CustomException(ErrorCode.COMMON_002);
         }
@@ -54,7 +60,7 @@ public class HeartCardPhraseCommentService {
                 request.content()
         ));
         // TODO: 알림 도메인(LN-022)이 연결되면 코멘트 등록 시에만 알림 INBOX 생성 호출.
-        return HeartCardPhraseCommentResponse.of(comment, memberId, true);
+        return HeartCardPhraseCommentResponse.of(comment, memberId, false);
     }
 
     @Transactional
@@ -86,6 +92,16 @@ public class HeartCardPhraseCommentService {
 
     private void validateRange(int startOffset, int endOffset) {
         if (startOffset >= endOffset) {
+            throw new CustomException(ErrorCode.COMMON_002);
+        }
+    }
+
+    private void validateSelectedText(FunzyPackCard heartCard, HeartCardPhraseCommentCreateRequest request) {
+        String body = heartCard.getMessage() == null ? "" : heartCard.getMessage();
+        if (request.endOffset() > body.length()) {
+            throw new CustomException(ErrorCode.COMMON_002);
+        }
+        if (!body.substring(request.startOffset(), request.endOffset()).equals(request.selectedText())) {
             throw new CustomException(ErrorCode.COMMON_002);
         }
     }

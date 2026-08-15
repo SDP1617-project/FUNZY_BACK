@@ -39,11 +39,11 @@ public class HeartCardKokController {
             summary = "마음카드 콕 토글",
             description = "콕하지 않은 카드면 아카이브에 저장하고, 이미 콕한 카드면 아카이브에서 즉시 제거합니다. category를 생략하면 ETC로 저장합니다."
     )
-    public ApiResponse<HeartCardKokResponse> toggleKok(
+    public ApiResponse<HeartCardKokResponse> updateKok(
             @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
             @Parameter(description = "마음카드 ID", example = "100") @PathVariable Long heartCardId,
             @RequestBody(required = false) HeartCardKokRequest request
     ) {
-        return ApiResponse.ok("Heart card kok toggled.", heartCardKokService.toggleKok(memberId, heartCardId, request));
+        return ApiResponse.ok("Heart card kok updated.", heartCardKokService.updateKok(memberId, heartCardId, request));
     }
 }

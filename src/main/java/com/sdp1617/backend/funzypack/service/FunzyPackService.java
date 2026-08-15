@@ -8,6 +8,7 @@ import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.heartcard.repository.HeartCardEmojiReactionRepository;
 import com.sdp1617.backend.heartcard.repository.HeartCardPhraseCommentRepository;
+import com.sdp1617.backend.letter.repository.LetterInteractionRepository;
 import com.sdp1617.backend.letter.repository.ReceivedLetterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class FunzyPackService {
     private final ArchiveCardRepository archiveCardRepository;
     private final HeartCardEmojiReactionRepository heartCardEmojiReactionRepository;
     private final HeartCardPhraseCommentRepository heartCardPhraseCommentRepository;
+    private final LetterInteractionRepository letterInteractionRepository;
 
     public FunzyPackCardListResponse getCards(Long memberId, Long packId) {
         requireLogin(memberId);
@@ -49,6 +51,7 @@ public class FunzyPackService {
         }
 
         funzyPackCardRepository.deleteByPackId(packId);
+        letterInteractionRepository.deleteByLetterId(packId);
         receivedLetterRepository.deleteById(packId);
     }
 

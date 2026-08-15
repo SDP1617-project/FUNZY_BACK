@@ -7,6 +7,8 @@ import com.sdp1617.backend.letter.entity.ReceivedLetter;
 import com.sdp1617.backend.letter.repository.ReceivedLetterRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +32,9 @@ public class ReceivedLetterService {
             LetterSortType sortType,
             String senderName,
             LocalDate receivedFrom,
-            LocalDate receivedTo
+            LocalDate receivedTo,
+            int page,
+            int size
     ) {
         Sort sort = switch (sortType) {
             case LATEST -> Sort.by(Sort.Direction.DESC, "receivedAt");
@@ -38,12 +43,22 @@ public class ReceivedLetterService {
 
         LocalDateTime from = receivedFrom == null ? null : receivedFrom.atStartOfDay();
         LocalDateTime to = receivedTo == null ? null : receivedTo.plusDays(1).atStartOfDay();
+        PageRequest pageable = PageRequest.of(normalizePage(page), normalizeSize(size), sort);
+        Page<ReceivedLetter> letters = receivedLetterRepository.findAll(
+                spec(memberId, blankToNull(senderName), from, to),
+                pageable
+        );
 
-        return ReceivedLetterListResponse.from(
-                receivedLetterRepository.findAll(spec(memberId, blankToNull(senderName), from, to), sort)
-                        .stream()
+        return ReceivedLetterListResponse.of(
+                letters.stream()
                         .map(ReceivedLetterResponse::from)
-                        .toList()
+                        .toList(),
+                letters.getNumber(),
+                letters.getSize(),
+                letters.getTotalElements(),
+                letters.getTotalPages(),
+                letters.isFirst(),
+                letters.isLast()
         );
     }
 
@@ -60,7 +75,8 @@ public class ReceivedLetterService {
             if (senderName != null) {
                 predicates.add(criteriaBuilder.like(
                         criteriaBuilder.lower(root.get("senderName")),
-                        "%" + senderName.toLowerCase() + "%"
+                        "%" + escapeLike(senderName.toLowerCase(Locale.ROOT)) + "%",
+                        '\\'
                 ));
             }
             if (receivedFrom != null) {
@@ -79,5 +95,23 @@ public class ReceivedLetterService {
             return null;
         }
         return value;
+    }
+
+    private int normalizePage(int page) {
+        return Math.max(page, 0);
+    }
+
+    private int normalizeSize(int size) {
+        if (size < 1) {
+            return 20;
+        }
+        return Math.min(size, 100);
+    }
+
+    private String escapeLike(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 }

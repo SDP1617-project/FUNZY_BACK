@@ -8,6 +8,7 @@ import com.sdp1617.backend.letter.entity.LetterInteraction;
 import com.sdp1617.backend.letter.entity.LetterInteractionType;
 import com.sdp1617.backend.letter.entity.LetterReactionType;
 import com.sdp1617.backend.letter.repository.LetterInteractionRepository;
+import com.sdp1617.backend.letter.repository.ReceivedLetterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,16 +19,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class LetterInteractionService {
 
     private final LetterInteractionRepository letterInteractionRepository;
+    private final ReceivedLetterRepository receivedLetterRepository;
 
     @Transactional
     public LetterInteractionResponse saveReaction(Long memberId, Long letterId, LetterReactionType reactionType) {
         requireLogin(memberId);
+        validateReceivedLetterAccess(letterId, memberId);
         return saveOnce(letterId, memberId, LetterInteractionType.REACTION, reactionType.name());
     }
 
     @Transactional
     public LetterInteractionResponse saveComment(Long memberId, Long letterId, LetterCommentRequest request) {
         requireLogin(memberId);
+        validateReceivedLetterAccess(letterId, memberId);
         LetterInteraction interaction = letterInteractionRepository.save(
                 new LetterInteraction(letterId, memberId, LetterInteractionType.COMMENT, request.content())
         );
@@ -37,6 +41,7 @@ public class LetterInteractionService {
     @Transactional
     public LetterInteractionResponse saveFavorite(Long memberId, Long letterId) {
         requireLogin(memberId);
+        validateReceivedLetterAccess(letterId, memberId);
         return saveOnce(letterId, memberId, LetterInteractionType.FAVORITE, "FAVORITE");
     }
 
@@ -57,6 +62,12 @@ public class LetterInteractionService {
     private void requireLogin(Long memberId) {
         if (memberId == null) {
             throw new CustomException(ErrorCode.COMMON_003);
+        }
+    }
+
+    private void validateReceivedLetterAccess(Long letterId, Long memberId) {
+        if (!receivedLetterRepository.existsByIdAndReceiverMemberId(letterId, memberId)) {
+            throw new CustomException(ErrorCode.COMMON_001);
         }
     }
 }

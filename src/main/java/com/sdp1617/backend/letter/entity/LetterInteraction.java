@@ -21,7 +21,7 @@ import java.time.LocalDateTime;
         name = "letter_interactions",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_letter_interaction_once",
-                columnNames = {"letter_id", "member_id", "type", "value"}
+                columnNames = {"letter_id", "member_id", "type", "value", "deduplication_key"}
         )
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -44,6 +44,9 @@ public class LetterInteraction {
     @Column(length = 500)
     private String value;
 
+    @Column(name = "deduplication_key", nullable = false, length = 36)
+    private String deduplicationKey;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -52,6 +55,9 @@ public class LetterInteraction {
         this.memberId = memberId;
         this.type = type;
         this.value = value;
+        this.deduplicationKey = type == LetterInteractionType.COMMENT
+                ? java.util.UUID.randomUUID().toString()
+                : value;
         this.createdAt = LocalDateTime.now();
     }
 }

@@ -18,35 +18,41 @@ import java.time.LocalDate;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "받은 편지함", description = "받은 편지 목록 조회, 필터, 정렬 API")
+@Tag(name = "Received letters", description = "Received letter list, filter, and sorting API")
 public class ReceivedLetterController {
 
     private final ReceivedLetterService receivedLetterService;
 
     @GetMapping("/api/letters/received")
     @Operation(
-            summary = "받은 편지 목록 조회",
-            description = "로그인한 사용자가 받은 편지를 조회합니다. 기본 정렬은 최신순이며, 발신자명/수신일 기간/정렬 조건을 함께 적용할 수 있습니다."
+            summary = "Get received letters",
+            description = "Loads received letters for the authenticated user with sender, date, sort, and pagination filters."
     )
     public ApiResponse<ReceivedLetterListResponse> getReceivedLetters(
             @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
-            @Parameter(description = "정렬 조건. LATEST=최신순, OLDEST=오래된순", example = "LATEST")
+            @Parameter(description = "Sort condition. LATEST or OLDEST.", example = "LATEST")
             @RequestParam(defaultValue = "LATEST") LetterSortType sort,
-            @Parameter(description = "상대 이름 필터. 발신자명에 포함되는 값으로 검색합니다.", example = "Eunwoo")
+            @Parameter(description = "Sender name contains filter.", example = "Eunwoo")
             @RequestParam(required = false) String senderName,
-            @Parameter(description = "조회 시작 수신일", example = "2026-08-01")
+            @Parameter(description = "Received date from.", example = "2026-08-01")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             @RequestParam(required = false) LocalDate receivedFrom,
-            @Parameter(description = "조회 종료 수신일", example = "2026-08-31")
+            @Parameter(description = "Received date to.", example = "2026-08-31")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            @RequestParam(required = false) LocalDate receivedTo
+            @RequestParam(required = false) LocalDate receivedTo,
+            @Parameter(description = "Page number, zero-based.", example = "0")
+            @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size. Maximum is 100.", example = "20")
+            @RequestParam(defaultValue = "20") int size
     ) {
         ReceivedLetterListResponse response = receivedLetterService.getReceivedLetters(
                 memberId,
                 sort,
                 senderName,
                 receivedFrom,
-                receivedTo
+                receivedTo,
+                page,
+                size
         );
         return ApiResponse.ok("Received letters loaded.", response);
     }

@@ -27,19 +27,23 @@ public class HeartCardKokService {
     }
 
     @Transactional
-    public HeartCardKokResponse toggleKok(Long memberId, Long heartCardId, HeartCardKokRequest request) {
+    public HeartCardKokResponse updateKok(Long memberId, Long heartCardId, HeartCardKokRequest request) {
         requireLogin(memberId);
+        HeartCardKokRequest safeRequest = request == null ? new HeartCardKokRequest(true, null) : request;
         return archiveCardRepository.findByOwnerMemberIdAndLetterCardId(memberId, heartCardId)
-                .map(archiveCard -> deleteKok(heartCardId, archiveCard))
-                .orElseGet(() -> createKok(memberId, heartCardId, request));
+                .map(archiveCard -> safeRequest.kokOrDefault()
+                        ? HeartCardKokResponse.active(heartCardId, archiveCard)
+                        : deleteKok(heartCardId, archiveCard))
+                .orElseGet(() -> safeRequest.kokOrDefault()
+                        ? createKok(memberId, heartCardId, safeRequest)
+                        : HeartCardKokResponse.inactive(heartCardId));
     }
 
     private HeartCardKokResponse createKok(Long memberId, Long heartCardId, HeartCardKokRequest request) {
-        HeartCardKokRequest safeRequest = request == null ? new HeartCardKokRequest(null) : request;
         ArchiveCard archiveCard = archiveCardRepository.save(new ArchiveCard(
                 memberId,
                 heartCardId,
-                safeRequest.categoryOrDefault()
+                request.categoryOrDefault()
         ));
         return HeartCardKokResponse.active(heartCardId, archiveCard);
     }

@@ -1,5 +1,6 @@
 package com.sdp1617.backend.heartcard.service;
 
+import com.sdp1617.backend.funzypack.repository.FunzyPackCardRepository;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.heartcard.dto.HeartCardEmojiOptionListResponse;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class HeartCardEmojiService {
 
     private final HeartCardEmojiReactionRepository heartCardEmojiReactionRepository;
+    private final FunzyPackCardRepository funzyPackCardRepository;
 
     public HeartCardEmojiOptionListResponse getEmojiOptions() {
         return HeartCardEmojiOptionListResponse.fromDefaultOptions();
@@ -33,6 +35,7 @@ public class HeartCardEmojiService {
     @Transactional
     public HeartCardEmojiResponse updateEmoji(Long memberId, Long heartCardId, HeartCardEmojiRequest request) {
         requireLogin(memberId);
+        lockHeartCard(heartCardId);
         return heartCardEmojiReactionRepository.findByHeartCardIdAndMemberId(heartCardId, memberId)
                 .map(reaction -> updateOrDelete(heartCardId, reaction, request))
                 .orElseGet(() -> create(memberId, heartCardId, request));
@@ -43,7 +46,7 @@ public class HeartCardEmojiService {
                 new HeartCardEmojiReaction(heartCardId, memberId, request.emoji())
         );
         // TODO: 알림 도메인(LN-021)이 연결되면 최초 등록 시에만 알림 INBOX 생성 호출.
-        return HeartCardEmojiResponse.of(reaction.getHeartCardId(), reaction.getEmoji(), HeartCardEmojiAction.CREATED, true);
+        return HeartCardEmojiResponse.of(reaction.getHeartCardId(), reaction.getEmoji(), HeartCardEmojiAction.CREATED, false);
     }
 
     private HeartCardEmojiResponse updateOrDelete(
@@ -64,5 +67,10 @@ public class HeartCardEmojiService {
         if (memberId == null) {
             throw new CustomException(ErrorCode.COMMON_003);
         }
+    }
+
+    private void lockHeartCard(Long heartCardId) {
+        funzyPackCardRepository.findByHeartCardIdForUpdate(heartCardId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_001));
     }
 }
