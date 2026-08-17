@@ -11,6 +11,10 @@ public interface ArchiveCardRepository extends JpaRepository<ArchiveCard, Long> 
 
     boolean existsByOwnerMemberIdAndLetterCardId(Long ownerMemberId, Long letterCardId);
 
+    Optional<ArchiveCard> findByOwnerMemberIdAndLetterCardId(Long ownerMemberId, Long letterCardId);
+
+    void deleteByOwnerMemberIdAndLetterCardIdIn(Long ownerMemberId, List<Long> letterCardIds);
+
     List<ArchiveCard> findByOwnerMemberIdOrderByCreatedAtDesc(Long ownerMemberId);
 
     List<ArchiveCard> findByOwnerMemberIdAndCategoryOrderByCreatedAtDesc(Long ownerMemberId, ArchiveCategory category);
