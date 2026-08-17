@@ -3,10 +3,13 @@ package com.sdp1617.backend.heartcard.service;
 import com.sdp1617.backend.archive.entity.ArchiveCard;
 import com.sdp1617.backend.archive.repository.ArchiveCardLikeRepository;
 import com.sdp1617.backend.archive.repository.ArchiveCardRepository;
+import com.sdp1617.backend.funzypack.entity.FunzyPackCard;
+import com.sdp1617.backend.funzypack.repository.FunzyPackCardRepository;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.heartcard.dto.HeartCardKokRequest;
 import com.sdp1617.backend.heartcard.dto.HeartCardKokResponse;
+import com.sdp1617.backend.letter.repository.ReceivedLetterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +21,8 @@ public class HeartCardKokService {
 
     private final ArchiveCardRepository archiveCardRepository;
     private final ArchiveCardLikeRepository archiveCardLikeRepository;
+    private final FunzyPackCardRepository funzyPackCardRepository;
+    private final ReceivedLetterRepository receivedLetterRepository;
 
     public HeartCardKokResponse getKok(Long memberId, Long heartCardId) {
         requireLogin(memberId);
@@ -40,6 +45,12 @@ public class HeartCardKokService {
     }
 
     private HeartCardKokResponse createKok(Long memberId, Long heartCardId, HeartCardKokRequest request) {
+        FunzyPackCard targetCard = funzyPackCardRepository.findByHeartCardIdForUpdate(heartCardId)
+                .orElseThrow(() -> new CustomException(ErrorCode.COMMON_001));
+        if (!receivedLetterRepository.existsByIdAndReceiverMemberId(targetCard.getPackId(), memberId)) {
+            throw new CustomException(ErrorCode.COMMON_001);
+        }
+
         ArchiveCard archiveCard = archiveCardRepository.save(new ArchiveCard(
                 memberId,
                 heartCardId,
