@@ -39,3 +39,6 @@ out/
 ### Local overrides ###
 application-local.yml
 .data/
+
+### Docker ###
+.env
