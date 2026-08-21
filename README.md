@@ -46,6 +46,7 @@ docker compose up -d --build
 
 # 4. 확인 (기동 완료까지 기다렸다가 확인, 최대 60초)
 for i in $(seq 1 30); do curl -sf http://localhost:8080/health && break; sleep 2; done
+curl -sf http://localhost:8080/health || { echo "앱이 시간 내에 기동하지 못했습니다" >&2; exit 1; }
 ```
 
 ### 종료
