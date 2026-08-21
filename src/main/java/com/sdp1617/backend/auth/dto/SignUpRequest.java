@@ -1,5 +1,6 @@
 package com.sdp1617.backend.auth.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -8,22 +9,27 @@ import jakarta.validation.constraints.Size;
 import java.util.Locale;
 
 public record SignUpRequest(
+        @Schema(description = "가입 이메일 (로그인 아이디로 사용)", example = "test@sdp1617.com")
         @NotBlank(message = "이메일을 입력해주세요.")
         @Email(message = "이메일 형식이 올바르지 않습니다.")
         String email,
 
+        @Schema(description = "비밀번호 (8자 이상, 영문+숫자+특수문자 조합)", example = "Password1!")
         @NotBlank(message = "비밀번호를 입력해주세요.")
         @Pattern(regexp = PasswordPolicy.REGEXP, message = PasswordPolicy.MESSAGE)
         @MaxUtf8Bytes(value = PasswordPolicy.MAX_BYTES, message = PasswordPolicy.MAX_BYTES_MESSAGE)
         String password,
 
+        @Schema(description = "비밀번호 확인", example = "Password1!")
         @NotBlank(message = "비밀번호 확인을 입력해주세요.")
         String passwordConfirm,
 
+        @Schema(description = "닉네임 (2~20자, 중복 불가)", example = "닉네임")
         @NotBlank(message = "닉네임을 입력해주세요.")
         @Size(min = 2, max = 20, message = "닉네임은 2~20자 이내여야 합니다.")
         String nickname,
 
+        @Schema(description = "서비스 이용약관 동의 여부 (true만 허용)", example = "true")
         @AssertTrue(message = "약관에 동의해야 가입할 수 있습니다.")
         boolean termsAgreed
 ) {
