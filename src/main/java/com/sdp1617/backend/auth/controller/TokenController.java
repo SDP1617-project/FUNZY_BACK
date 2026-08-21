@@ -40,6 +40,15 @@ public class TokenController {
                               "data": { "accessToken": "eyJhbGciOiJIUzM4NCJ9..." }
                             }
                             """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "refreshToken 누락",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "COMMON_002",
+                              "message": "refreshToken은 필수입니다.",
+                              "data": null
+                            }
+                            """))),
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "유효하지 않거나 만료된 토큰, 또는 폐기된 세션",
                     content = @Content(mediaType = "application/json", examples = {
                             @ExampleObject(name = "유효하지 않은 토큰", value = """

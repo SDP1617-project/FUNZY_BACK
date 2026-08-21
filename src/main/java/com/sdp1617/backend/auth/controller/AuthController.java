@@ -203,24 +203,25 @@ public class AuthController {
                               "data": null
                             }
                             """))),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "새 비밀번호 확인 불일치",
-                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
-                            {
-                              "success": false,
-                              "code": "AUTH_008",
-                              "message": "비밀번호가 일치하지 않습니다.",
-                              "data": null
-                            }
-                            """))),
-            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "토큰 만료 또는 유효하지 않음",
-                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
-                            {
-                              "success": false,
-                              "code": "AUTH_011",
-                              "message": "유효하지 않거나 만료된 링크입니다.",
-                              "data": null
-                            }
-                            """)))
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "새 비밀번호 확인 불일치 / 토큰 만료 또는 유효하지 않음",
+                    content = @Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "새 비밀번호 확인 불일치", value = """
+                                    {
+                                      "success": false,
+                                      "code": "AUTH_008",
+                                      "message": "비밀번호가 일치하지 않습니다.",
+                                      "data": null
+                                    }
+                                    """),
+                            @ExampleObject(name = "토큰 만료 또는 유효하지 않음", value = """
+                                    {
+                                      "success": false,
+                                      "code": "AUTH_011",
+                                      "message": "유효하지 않거나 만료된 링크입니다.",
+                                      "data": null
+                                    }
+                                    """)
+                    }))
     })
     @PostMapping("/password/reset")
     public ApiResponse<Void> resetPassword(@Valid @RequestBody PasswordResetConfirmRequest request) {
