@@ -67,8 +67,23 @@ jobs:
           source: "Dockerfile,docker-compose.yml,.dockerignore,build/libs/*.jar"
           target: "~/app"
 
-      - name: Deploy on EC2
+      - name: Re-check freshness right before deploy
+        id: recheck
         if: steps.check.outputs.is_latest == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST=$(gh api repos/${{ github.repository }}/git/refs/heads/develop --jq .object.sha)
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          if [ "$HEAD_SHA" = "$LATEST" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::빌드/전송 도중 더 최신 커밋(${LATEST})이 올라와서 배포를 건너뜁니다"
+          fi
+
+      - name: Deploy on EC2
+        if: steps.check.outputs.is_latest == 'true' && steps.recheck.outputs.is_latest == 'true'
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
