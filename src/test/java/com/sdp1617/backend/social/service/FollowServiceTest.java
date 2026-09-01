@@ -1,5 +1,6 @@
 package com.sdp1617.backend.social.service;
 
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.global.error.CustomException;
@@ -52,7 +53,7 @@ class FollowServiceTest {
     }
 
     private Member member(Long id, String nickname) {
-        Member member = new Member(id + "@sdp1617.com", "encoded", nickname, true);
+        Member member = new Member(id + "@sdp1617.com", "encoded", nickname, Consent.requiredOnly());
         setId(member, Member.class, id);
         return member;
     }

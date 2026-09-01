@@ -1,5 +1,6 @@
 package com.sdp1617.backend.auth.dto;
 
+import com.sdp1617.backend.auth.entity.Consent;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
@@ -29,12 +30,26 @@ public record SignUpRequest(
         @Size(min = 2, max = 20, message = "닉네임은 2~20자 이내여야 합니다.")
         String nickname,
 
-        @Schema(description = "서비스 이용약관 동의 여부 (true만 허용)", example = "true")
+        @Schema(description = "서비스 이용약관 및 개인정보 수집·이용(서비스 운영) 동의 여부 (true만 허용)", example = "true")
         @AssertTrue(message = "약관에 동의해야 가입할 수 있습니다.")
-        boolean termsAgreed
+        boolean termsAgreed,
+
+        @Schema(description = "만 14세 이상 확인 (true만 허용)", example = "true")
+        @AssertTrue(message = "만 14세 이상만 가입할 수 있습니다.")
+        boolean age14Confirmed,
+
+        @Schema(description = "마케팅 목적 개인정보 수집·이용 동의 여부 (선택)", example = "false")
+        boolean marketingConsent,
+
+        @Schema(description = "광고성 정보 수신 동의 여부 (선택)", example = "false")
+        boolean adConsent
 ) {
     public SignUpRequest {
         email = email == null ? null : email.trim().toLowerCase(Locale.ROOT);
         nickname = nickname == null ? null : nickname.trim();
+    }
+
+    public Consent toConsent() {
+        return new Consent(termsAgreed, age14Confirmed, marketingConsent, adConsent);
     }
 }

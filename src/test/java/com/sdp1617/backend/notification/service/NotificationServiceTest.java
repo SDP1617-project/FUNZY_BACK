@@ -1,5 +1,6 @@
 package com.sdp1617.backend.notification.service;
 
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.global.error.CustomException;
@@ -37,7 +38,7 @@ class NotificationServiceTest {
     private NotificationService notificationService;
 
     private Member member() {
-        return new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        return new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
     }
 
     private void setId(Object entity, Class<?> type, Long id) {

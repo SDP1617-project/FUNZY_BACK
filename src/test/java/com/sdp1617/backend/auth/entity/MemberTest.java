@@ -12,7 +12,7 @@ class MemberTest {
 
     @Test
     void 실패횟수가_5회_미만이면_잠기지_않는다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
 
         for (int i = 0; i < 4; i++) {
             member.increaseFailedLoginCount();
@@ -23,7 +23,7 @@ class MemberTest {
 
     @Test
     void 실패횟수가_5회면_잠긴다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
 
         for (int i = 0; i < 5; i++) {
             member.increaseFailedLoginCount();
@@ -34,7 +34,7 @@ class MemberTest {
 
     @Test
     void unlock하면_실패횟수가_초기화되고_잠금이_풀린다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
         for (int i = 0; i < 5; i++) {
             member.increaseFailedLoginCount();
         }
@@ -47,7 +47,7 @@ class MemberTest {
 
     @Test
     void resetFailedLoginCount하면_잠금상태도_함께_풀린다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
         for (int i = 0; i < 5; i++) {
             member.increaseFailedLoginCount();
         }
@@ -59,14 +59,14 @@ class MemberTest {
 
     @Test
     void 이메일_가입_회원은_비밀번호를_가진다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
 
         assertTrue(member.hasPassword());
     }
 
     @Test
     void 소셜_가입_회원은_비밀번호가_없다() {
-        Member member = new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        Member member = new Member("test@kakao.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
 
         assertFalse(member.hasPassword());
         assertEquals(AuthProvider.KAKAO, member.getProvider());
@@ -76,20 +76,20 @@ class MemberTest {
     @Test
     void 소셜_가입_회원은_providerId가_없으면_예외를_던진다() {
         assertThrows(IllegalArgumentException.class,
-                () -> new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, null));
+                () -> new Member("test@kakao.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, null));
         assertThrows(IllegalArgumentException.class,
-                () -> new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, ""));
+                () -> new Member("test@kakao.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, ""));
     }
 
     @Test
     void 소셜_가입_생성자에_LOCAL_provider를_넘기면_예외를_던진다() {
         assertThrows(IllegalArgumentException.class,
-                () -> new Member("test@sdp1617.com", "닉네임", true, AuthProvider.LOCAL, "12345"));
+                () -> new Member("test@sdp1617.com", "닉네임", Consent.requiredOnly(), AuthProvider.LOCAL, "12345"));
     }
 
     @Test
     void 팔로우코드를_재발급하면_값이_바뀐다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
         member.reissueFollowCode();
         String firstCode = member.getFollowCode();
 
@@ -100,17 +100,35 @@ class MemberTest {
 
     @Test
     void 가입시_푸시_알림_수신은_기본으로_켜져있다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
 
         assertTrue(member.isPushNotificationEnabled());
     }
 
     @Test
     void 푸시_알림_수신_설정을_변경할_수_있다() {
-        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
 
         member.updatePushNotificationEnabled(false);
 
         assertFalse(member.isPushNotificationEnabled());
+    }
+
+    @Test
+    void 이메일_가입_회원은_전달받은_동의정보를_그대로_저장한다() {
+        Consent consent = new Consent(true, true, true, false);
+
+        Member member = new Member("test@sdp1617.com", "encoded", "닉네임", consent);
+
+        assertEquals(consent, member.getConsent());
+    }
+
+    @Test
+    void 소셜_가입_회원은_전달받은_동의정보를_그대로_저장한다() {
+        Consent consent = new Consent(true, true, false, true);
+
+        Member member = new Member("test@kakao.com", "닉네임", consent, AuthProvider.KAKAO, "12345");
+
+        assertEquals(consent, member.getConsent());
     }
 }

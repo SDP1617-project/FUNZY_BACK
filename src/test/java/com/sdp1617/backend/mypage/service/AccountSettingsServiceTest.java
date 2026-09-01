@@ -1,6 +1,7 @@
 package com.sdp1617.backend.mypage.service;
 
 import com.sdp1617.backend.auth.entity.AuthProvider;
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.service.AllSessionsRevokedEvent;
@@ -43,11 +44,11 @@ class AccountSettingsServiceTest {
     private AccountSettingsService accountSettingsService;
 
     private Member localMember() {
-        return new Member("test@sdp1617.com", "encoded", "닉네임", true);
+        return new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
     }
 
     private Member socialMember() {
-        return new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        return new Member("social@sdp1617.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
     }
 
     private void setId(Member member, Long id) {

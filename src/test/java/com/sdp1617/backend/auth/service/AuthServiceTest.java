@@ -5,6 +5,7 @@ import com.sdp1617.backend.auth.dto.SignUpRequest;
 import com.sdp1617.backend.auth.dto.TokenResponse;
 import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
 import com.sdp1617.backend.auth.entity.AuthProvider;
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.VerificationTokenRepository;
@@ -64,14 +65,14 @@ class AuthServiceTest {
     }
 
     private Member member(String email, String password, String nickname) {
-        return new Member(email, password, nickname, true);
+        return new Member(email, password, nickname, Consent.requiredOnly());
     }
 
     @Test
     void 이메일이_중복되면_AUTH_006_예외를_던진다() {
         when(memberRepository.existsByEmail("test@sdp1617.com")).thenReturn(true);
 
-        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true);
+        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true, true, false, false);
 
         CustomException exception = assertThrows(CustomException.class, () -> authService.signUp(request));
 
@@ -84,7 +85,7 @@ class AuthServiceTest {
         when(memberRepository.existsByEmail(anyString())).thenReturn(false);
         when(memberRepository.existsByNickname("닉네임")).thenReturn(true);
 
-        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true);
+        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true, true, false, false);
 
         CustomException exception = assertThrows(CustomException.class, () -> authService.signUp(request));
 
@@ -96,7 +97,7 @@ class AuthServiceTest {
         when(memberRepository.existsByEmail(anyString())).thenReturn(false);
         when(memberRepository.existsByNickname(anyString())).thenReturn(false);
 
-        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password2!", "닉네임", true);
+        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password2!", "닉네임", true, true, false, false);
 
         CustomException exception = assertThrows(CustomException.class, () -> authService.signUp(request));
 
@@ -109,12 +110,27 @@ class AuthServiceTest {
         when(memberRepository.existsByNickname(anyString())).thenReturn(false);
         when(passwordEncoder.encode("Password1!")).thenReturn("encoded-password");
 
-        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true);
+        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true, true, false, false);
         authService.signUp(request);
 
         ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
         verify(memberRepository).save(captor.capture());
         assertEquals("encoded-password", captor.getValue().getPassword());
+    }
+
+    @Test
+    void 정상_회원가입시_요청의_동의항목이_회원에_그대로_반영된다() {
+        when(memberRepository.existsByEmail(anyString())).thenReturn(false);
+        when(memberRepository.existsByNickname(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
+
+        SignUpRequest request = new SignUpRequest(
+                "test@sdp1617.com", "Password1!", "Password1!", "닉네임", true, true, true, false);
+        authService.signUp(request);
+
+        ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
+        verify(memberRepository).save(captor.capture());
+        assertEquals(request.toConsent(), captor.getValue().getConsent());
     }
 
     @Test
@@ -145,7 +161,7 @@ class AuthServiceTest {
 
     @Test
     void 소셜전용_계정으로_이메일_로그인을_시도하면_AUTH_001_예외를_던진다() {
-        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        Member member = new Member("social@sdp1617.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
         setId(member, 1L);
         when(memberRepository.findByEmail("social@sdp1617.com")).thenReturn(Optional.of(member));
 
@@ -232,7 +248,7 @@ class AuthServiceTest {
 
     @Test
     void 비밀번호_재설정_요청시_소셜_전용_계정이면_조용히_무시한다() {
-        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        Member member = new Member("social@sdp1617.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
         setId(member, 1L);
         when(memberRepository.findByEmail("social@sdp1617.com")).thenReturn(Optional.of(member));
 
@@ -244,7 +260,7 @@ class AuthServiceTest {
 
     @Test
     void 소셜_전용_계정이_비밀번호_재설정_토큰을_가지고_있어도_AUTH_011_예외를_던진다() {
-        Member member = new Member("social@sdp1617.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        Member member = new Member("social@sdp1617.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
         setId(member, 1L);
         when(verificationTokenRepository.consume("password-reset", "token-value")).thenReturn(Optional.of(1L));
         when(memberRepository.findById(1L)).thenReturn(Optional.of(member));

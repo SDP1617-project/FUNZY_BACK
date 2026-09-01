@@ -146,7 +146,7 @@ public class SocialAuthController {
         TokenResponse response = socialAuthService.completeSignUp(
                 request.signupToken(),
                 request.nickname(),
-                request.termsAgreed()
+                request.toConsent()
         );
         return ApiResponse.ok("회원가입이 완료되었습니다.", response);
     }
