@@ -3,6 +3,7 @@ package com.sdp1617.backend.auth.service;
 import com.sdp1617.backend.auth.dto.SocialAuthResponse;
 import com.sdp1617.backend.auth.dto.TokenResponse;
 import com.sdp1617.backend.auth.entity.AuthProvider;
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.SocialSignupSessionRepository;
@@ -17,6 +18,7 @@ import java.time.Duration;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -56,7 +58,7 @@ class SocialAuthServiceTest {
         when(providerRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
         when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "test@kakao.com"));
 
-        Member member = new Member("test@kakao.com", "닉네임", true, AuthProvider.KAKAO, "12345");
+        Member member = new Member("test@kakao.com", "닉네임", Consent.requiredOnly(), AuthProvider.KAKAO, "12345");
         setId(member, 1L);
         when(memberRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "12345"))
                 .thenReturn(Optional.of(member));
@@ -104,9 +106,25 @@ class SocialAuthServiceTest {
         when(memberRepository.existsByEmail("test@kakao.com")).thenReturn(false);
         when(tokenService.issueTokens(any())).thenReturn(new TokenResponse("access", "refresh"));
 
-        TokenResponse response = socialAuthService.completeSignUp("signup-token", "닉네임", true);
+        TokenResponse response = socialAuthService.completeSignUp("signup-token", "닉네임", Consent.requiredOnly());
 
         assertEquals("access", response.accessToken());
+    }
+
+    @Test
+    void 소셜_회원가입_완료시_전달받은_동의항목이_회원에_그대로_반영된다() {
+        SocialSignupSession session = new SocialSignupSession(AuthProvider.KAKAO, "12345", "test@kakao.com");
+        when(socialSignupSessionRepository.consume("signup-token")).thenReturn(Optional.of(session));
+        when(memberRepository.existsByNickname("닉네임")).thenReturn(false);
+        when(memberRepository.existsByEmail("test@kakao.com")).thenReturn(false);
+        when(tokenService.issueTokens(any())).thenReturn(new TokenResponse("access", "refresh"));
+
+        Consent consent = new Consent(true, true, false, true);
+        socialAuthService.completeSignUp("signup-token", "닉네임", consent);
+
+        ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
+        verify(memberRepository).save(captor.capture());
+        assertEquals(consent, captor.getValue().getConsent());
     }
 
     @Test
@@ -114,7 +132,7 @@ class SocialAuthServiceTest {
         when(socialSignupSessionRepository.consume("bad-token")).thenReturn(Optional.empty());
 
         CustomException exception = assertThrows(CustomException.class,
-                () -> socialAuthService.completeSignUp("bad-token", "닉네임", true));
+                () -> socialAuthService.completeSignUp("bad-token", "닉네임", Consent.requiredOnly()));
 
         assertEquals(ErrorCode.AUTH_011, exception.getErrorCode());
     }
@@ -126,7 +144,7 @@ class SocialAuthServiceTest {
         when(memberRepository.existsByNickname("닉네임")).thenReturn(true);
 
         CustomException exception = assertThrows(CustomException.class,
-                () -> socialAuthService.completeSignUp("signup-token", "닉네임", true));
+                () -> socialAuthService.completeSignUp("signup-token", "닉네임", Consent.requiredOnly()));
 
         assertEquals(ErrorCode.AUTH_007, exception.getErrorCode());
     }

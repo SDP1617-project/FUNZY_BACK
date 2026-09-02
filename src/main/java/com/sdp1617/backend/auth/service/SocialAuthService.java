@@ -3,6 +3,7 @@ package com.sdp1617.backend.auth.service;
 import com.sdp1617.backend.auth.dto.SocialAuthResponse;
 import com.sdp1617.backend.auth.dto.TokenResponse;
 import com.sdp1617.backend.auth.entity.AuthProvider;
+import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.SocialSignupSessionRepository;
@@ -49,7 +50,7 @@ public class SocialAuthService {
     }
 
     @Transactional
-    public TokenResponse completeSignUp(String signupToken, String nickname, boolean termsAgreed) {
+    public TokenResponse completeSignUp(String signupToken, String nickname, Consent consent) {
         SocialSignupSession session = socialSignupSessionRepository.consume(signupToken)
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_011));
 
@@ -60,7 +61,7 @@ public class SocialAuthService {
             throw new CustomException(ErrorCode.AUTH_012);
         }
 
-        Member member = new Member(session.email(), nickname, termsAgreed, session.provider(), session.externalId());
+        Member member = new Member(session.email(), nickname, consent, session.provider(), session.externalId());
         memberRepository.save(member);
 
         return tokenService.issueTokens(member.getId());

@@ -52,7 +52,7 @@ public class AuthService {
                 request.email(),
                 passwordEncoder.encode(request.password()),
                 request.nickname(),
-                request.termsAgreed()
+                request.toConsent()
         );
         memberRepository.save(member);
     }

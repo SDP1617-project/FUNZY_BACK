@@ -2,6 +2,7 @@ package com.sdp1617.backend.auth.entity;
 
 import com.sdp1617.backend.auth.util.FollowCodeGenerator;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -44,8 +45,8 @@ public class Member {
     @Column(nullable = false, unique = true, length = 20)
     private String nickname;
 
-    @Column(nullable = false)
-    private boolean termsAgreed;
+    @Embedded
+    private Consent consent;
 
     @Column(nullable = false)
     private int failedLoginCount;
@@ -65,25 +66,25 @@ public class Member {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public Member(String email, String password, String nickname, boolean termsAgreed) {
+    public Member(String email, String password, String nickname, Consent consent) {
         this.email = email;
         this.password = password;
         this.nickname = nickname;
-        this.termsAgreed = termsAgreed;
+        this.consent = consent;
         this.failedLoginCount = 0;
         this.provider = AuthProvider.LOCAL;
         this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
 
-    public Member(String email, String nickname, boolean termsAgreed, AuthProvider provider, String providerId) {
+    public Member(String email, String nickname, Consent consent, AuthProvider provider, String providerId) {
         if (provider == AuthProvider.LOCAL || providerId == null || providerId.isBlank()) {
             throw new IllegalArgumentException("소셜 회원은 LOCAL이 아닌 provider와 providerId가 필요합니다.");
         }
         this.email = email;
         this.password = null;
         this.nickname = nickname;
-        this.termsAgreed = termsAgreed;
+        this.consent = consent;
         this.failedLoginCount = 0;
         this.provider = provider;
         this.providerId = providerId;
