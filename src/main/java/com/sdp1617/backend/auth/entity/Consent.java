@@ -8,13 +8,13 @@ public record Consent(
         @Column(name = "terms_agreed", nullable = false)
         boolean termsAgreed,
 
-        @Column(name = "age14_confirmed", nullable = false)
+        @Column(name = "age14_confirmed", nullable = false, columnDefinition = "boolean default true")
         boolean age14Confirmed,
 
-        @Column(name = "marketing_consent", nullable = false)
+        @Column(name = "marketing_consent", nullable = false, columnDefinition = "boolean default false")
         boolean marketingConsent,
 
-        @Column(name = "ad_consent", nullable = false)
+        @Column(name = "ad_consent", nullable = false, columnDefinition = "boolean default false")
         boolean adConsent
 ) {
     public static Consent requiredOnly() {
