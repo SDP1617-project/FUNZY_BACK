@@ -42,3 +42,6 @@ application-local.yml
 
 ### Docker ###
 .env
+
+### Personal notes ###
+docs/

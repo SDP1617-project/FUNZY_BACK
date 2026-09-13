@@ -45,7 +45,11 @@ public enum ErrorCode {
     SOCIAL_006(HttpStatus.NOT_FOUND, "SOCIAL_006", "존재하지 않는 팔로우 요청입니다."),
     SOCIAL_007(HttpStatus.NOT_FOUND, "SOCIAL_007", "친구 관계가 아닙니다."),
 
-    NOTIFICATION_001(HttpStatus.NOT_FOUND, "NOTIFICATION_001", "존재하지 않는 알림입니다.");
+    NOTIFICATION_001(HttpStatus.NOT_FOUND, "NOTIFICATION_001", "존재하지 않는 알림입니다."),
+
+    MYPAGE_001(HttpStatus.BAD_REQUEST, "MYPAGE_001", "이미지 업로드가 완료되지 않았습니다."),
+    MYPAGE_002(HttpStatus.BAD_REQUEST, "MYPAGE_002", "지원하지 않는 이미지 형식입니다."),
+    MYPAGE_003(HttpStatus.BAD_REQUEST, "MYPAGE_003", "이미지 파일 크기가 허용 범위를 초과했습니다.");
 
     private final HttpStatus httpStatus;
     private final String code;

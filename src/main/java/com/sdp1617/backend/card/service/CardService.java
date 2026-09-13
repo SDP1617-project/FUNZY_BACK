@@ -19,9 +19,9 @@ import com.sdp1617.backend.card.repository.CardRepository;
 import com.sdp1617.backend.card.repository.CardRepository.CalendarImageProjection;
 import com.sdp1617.backend.card.repository.CardRepository.FolderSummaryProjection;
 import com.sdp1617.backend.card.repository.EnvelopRepository;
-import com.sdp1617.backend.global.config.properties.S3Properties;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
+import com.sdp1617.backend.global.s3.S3ImageService;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,33 +30,17 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 import java.util.function.Function;
 
 @Service
@@ -67,21 +51,12 @@ public class CardService {
 
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
-    private static final int IMAGE_SIGNATURE_READ_BYTES = 16;
-    private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
     private static final LocalDateTime EMPTY_CREATED_AT = LocalDateTime.MIN;
-    private static final Set<String> ALLOWED_IMAGE_CONTENT_TYPES = Set.of(
-            "image/jpeg",
-            "image/png",
-            "image/webp"
-    );
 
     private final EnvelopRepository envelopRepository;
     private final CardRepository cardRepository;
     private final EntityManager entityManager;
-    private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
-    private final S3Properties s3Properties;
+    private final S3ImageService s3ImageService;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -90,31 +65,9 @@ public class CardService {
             Long senderId,
             CardImagePresignedUrlRequest request
     ) {
-        validateS3Properties();
-        String contentType = normalizeContentType(request.contentType());
-        validateImageContentType(contentType);
-
-        String imageKey = createImageKey(senderId, contentType);
-        Instant expiresAt = Instant.now()
-                .plus(Duration.ofMinutes(s3Properties.presignedUrlExpirationMinutes()));
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(s3Properties.bucket())
-                .key(imageKey)
-                .contentType(contentType)
-                .build();
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofMinutes(s3Properties.presignedUrlExpirationMinutes()))
-                .putObjectRequest(putObjectRequest)
-                .build();
-        PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
-
-        return new CardImagePresignedUrlResponse(
-                presignedRequest.url().toString(),
-                imageKey,
-                createImageUrl(imageKey),
-                "PUT",
-                expiresAt
-        );
+        S3ImageService.PresignedUpload upload = s3ImageService.issuePresignedUpload(
+                imageKeyPrefix(senderId), request.contentType(), ErrorCode.CARD_003);
+        return CardImagePresignedUrlResponse.from(upload);
     }
 
     public CursorPageResponse<CardStorageResponse> getCards(
@@ -398,153 +351,20 @@ public class CardService {
         return EMPTY_CREATED_AT.equals(createdAt) ? null : createdAt;
     }
 
-    private void validateS3Properties() {
-        if (s3Properties.bucket() == null || s3Properties.bucket().isBlank()) {
-            throw new CustomException(ErrorCode.COMMON_999, "S3 bucket 설정이 필요합니다.");
-        }
-        if (s3Properties.staticRegion() == null || s3Properties.staticRegion().isBlank()) {
-            throw new CustomException(ErrorCode.COMMON_999, "S3 region 설정이 필요합니다.");
-        }
-        if (s3Properties.presignedUrlExpirationMinutes() <= 0) {
-            throw new CustomException(ErrorCode.COMMON_999, "S3 presigned URL 만료 시간 설정이 올바르지 않습니다.");
-        }
-    }
-
-    private void validateImageContentType(String contentType) {
-        if (!ALLOWED_IMAGE_CONTENT_TYPES.contains(contentType)) {
-            throw new CustomException(ErrorCode.CARD_003);
-        }
-    }
-
     private void validateUploadedImage(String imageKey) {
-        validateS3Properties();
-        HeadObjectResponse objectMetadata = getImageObjectMetadata(imageKey);
-        String contentType = normalizeContentType(objectMetadata.contentType());
-        validateImageContentType(contentType);
-        validateImageSize(objectMetadata.contentLength());
-        validateImageSignature(imageKey, contentType);
-    }
-
-    private HeadObjectResponse getImageObjectMetadata(String imageKey) {
-        try {
-            return s3Client.headObject(HeadObjectRequest.builder()
-                    .bucket(s3Properties.bucket())
-                    .key(imageKey)
-                    .build());
-        } catch (S3Exception exception) {
-            if (exception.statusCode() == 404) {
-                throw new CustomException(ErrorCode.CARD_002);
-            }
-            throw exception;
-        }
-    }
-
-    private void validateImageSize(Long contentLength) {
-        if (contentLength == null || contentLength <= 0) {
-            throw new CustomException(ErrorCode.CARD_003);
-        }
-        if (contentLength > MAX_IMAGE_SIZE_BYTES) {
-            throw new CustomException(ErrorCode.CARD_004);
-        }
-    }
-
-    private void validateImageSignature(String imageKey, String contentType) {
-        byte[] signature = readImageSignature(imageKey);
-        boolean valid = switch (contentType) {
-            case "image/jpeg" -> isJpeg(signature);
-            case "image/png" -> isPng(signature);
-            case "image/webp" -> isWebp(signature);
-            default -> false;
-        };
-        if (!valid) {
-            throw new CustomException(ErrorCode.CARD_003);
-        }
-    }
-
-    private byte[] readImageSignature(String imageKey) {
-        try (ResponseInputStream<GetObjectResponse> object = s3Client.getObject(GetObjectRequest.builder()
-                .bucket(s3Properties.bucket())
-                .key(imageKey)
-                .range("bytes=0-" + (IMAGE_SIGNATURE_READ_BYTES - 1))
-                .build())) {
-            return object.readNBytes(IMAGE_SIGNATURE_READ_BYTES);
-        } catch (S3Exception exception) {
-            if (exception.statusCode() == 404) {
-                throw new CustomException(ErrorCode.CARD_002);
-            }
-            throw exception;
-        } catch (IOException exception) {
-            throw new CustomException(ErrorCode.CARD_003);
-        }
-    }
-
-    private boolean isJpeg(byte[] signature) {
-        return signature.length >= 3
-                && (signature[0] & 0xFF) == 0xFF
-                && (signature[1] & 0xFF) == 0xD8
-                && (signature[2] & 0xFF) == 0xFF;
-    }
-
-    private boolean isPng(byte[] signature) {
-        int[] pngSignature = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
-        if (signature.length < pngSignature.length) {
-            return false;
-        }
-        for (int i = 0; i < pngSignature.length; i++) {
-            if ((signature[i] & 0xFF) != pngSignature[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isWebp(byte[] signature) {
-        return signature.length >= 12
-                && signature[0] == 'R'
-                && signature[1] == 'I'
-                && signature[2] == 'F'
-                && signature[3] == 'F'
-                && signature[8] == 'W'
-                && signature[9] == 'E'
-                && signature[10] == 'B'
-                && signature[11] == 'P';
+        s3ImageService.validateUploadedImage(imageKey, ErrorCode.CARD_002, ErrorCode.CARD_003, ErrorCode.CARD_004);
     }
 
     private void validateImageKeyOwner(Long senderId, String imageKey) {
-        if (!imageKey.startsWith(imageKeyPrefix(senderId))) {
-            throw new CustomException(ErrorCode.COMMON_004);
-        }
-    }
-
-    private String createImageKey(Long senderId, String contentType) {
-        return imageKeyPrefix(senderId) + UUID.randomUUID() + extensionFor(contentType);
+        s3ImageService.validateOwnership(imageKey, imageKeyPrefix(senderId));
     }
 
     private String imageKeyPrefix(Long senderId) {
         return "cards/" + senderId + "/";
     }
 
-    private String extensionFor(String contentType) {
-        return switch (contentType) {
-            case "image/jpeg" -> ".jpg";
-            case "image/png" -> ".png";
-            case "image/webp" -> ".webp";
-            default -> throw new CustomException(ErrorCode.CARD_003);
-        };
-    }
-
-    private String normalizeContentType(String contentType) {
-        if (contentType == null) {
-            throw new CustomException(ErrorCode.CARD_003);
-        }
-        return contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
-    }
-
     private String createImageUrl(String imageKey) {
-        if (s3Properties.publicBaseUrl() != null && !s3Properties.publicBaseUrl().isBlank()) {
-            return s3Properties.publicBaseUrl().replaceAll("/$", "") + "/" + imageKey;
-        }
-        return "https://" + s3Properties.bucket() + ".s3." + s3Properties.staticRegion() + ".amazonaws.com/" + imageKey;
+        return s3ImageService.buildImageUrl(imageKey);
     }
 
     private String createShareUrl(Long cardId) {

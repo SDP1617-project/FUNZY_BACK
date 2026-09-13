@@ -45,6 +45,12 @@ public class Member {
     @Column(nullable = false, unique = true, length = 20)
     private String nickname;
 
+    @Column(name = "profile_image_key", length = 512)
+    private String profileImageKey;
+
+    @Column(name = "profile_image_url", length = 1024)
+    private String profileImageUrl;
+
     @Embedded
     private Consent consent;
 
@@ -129,5 +135,19 @@ public class Member {
 
     public void updatePushNotificationEnabled(boolean pushNotificationEnabled) {
         this.pushNotificationEnabled = pushNotificationEnabled;
+    }
+
+    public void updateNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public void updateProfileImage(String profileImageKey, String profileImageUrl) {
+        this.profileImageKey = profileImageKey;
+        this.profileImageUrl = profileImageUrl;
+    }
+
+    public void resetProfileImage() {
+        this.profileImageKey = null;
+        this.profileImageUrl = null;
     }
 }
