@@ -7,10 +7,12 @@ import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.global.config.properties.S3Properties;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
+import com.sdp1617.backend.global.s3.S3ImageService;
 import com.sdp1617.backend.mypage.dto.NicknameUpdateRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImagePresignedUrlRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImageUploadCompleteRequest;
 import com.sdp1617.backend.mypage.dto.ProfileResponse;
+import java.io.ByteArrayInputStream;
 import java.lang.reflect.Field;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,12 +20,23 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -50,7 +63,8 @@ class ProfileServiceTest {
 
     @BeforeEach
     void setUp() {
-        profileService = new ProfileService(memberRepository, s3Client, s3Presigner, s3Properties);
+        S3ImageService s3ImageService = new S3ImageService(s3Client, s3Presigner, s3Properties);
+        profileService = new ProfileService(memberRepository, s3ImageService);
     }
 
     private Member localMember() {
@@ -127,6 +141,42 @@ class ProfileServiceTest {
     }
 
     @Test
+    void 동일한_이미지_키로_재요청해도_방금_반영한_이미지를_삭제하지_않는다() {
+        Member member = localMember();
+        setId(member, 1L);
+        member.updateProfileImage("profiles/1/a.png", "https://example.com/profiles/1/a.png");
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        stubValidPngUpload();
+
+        profileService.completeProfileImageUpload(1L, new ProfileImageUploadCompleteRequest("profiles/1/a.png"));
+
+        verify(s3Client, never()).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test
+    void 다른_이미지로_교체하면_이전_이미지를_S3에서_삭제한다() {
+        Member member = localMember();
+        setId(member, 1L);
+        member.updateProfileImage("profiles/1/old.png", "https://example.com/profiles/1/old.png");
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        stubValidPngUpload();
+
+        profileService.completeProfileImageUpload(1L, new ProfileImageUploadCompleteRequest("profiles/1/new.png"));
+
+        verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) -> req.key().equals("profiles/1/old.png")));
+    }
+
+    private void stubValidPngUpload() {
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength(16L).build());
+        byte[] pngSignature = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0};
+        when(s3Client.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().build(),
+                        AbortableInputStream.create(new ByteArrayInputStream(pngSignature))));
+    }
+
+    @Test
     void 프로필_이미지를_초기화한다() {
         Member member = localMember();
         setId(member, 1L);
@@ -143,7 +193,7 @@ class ProfileServiceTest {
     void 지원하지_않는_이미지_형식이면_presigned_URL_발급시_MYPAGE_002_예외를_던진다() {
         CustomException exception = assertThrows(CustomException.class,
                 () -> profileService.issueProfileImagePresignedUrl(
-                        1L, new ProfileImagePresignedUrlRequest("virus.exe", "application/octet-stream")));
+                        1L, new ProfileImagePresignedUrlRequest("application/octet-stream")));
 
         assertEquals(ErrorCode.MYPAGE_002, exception.getErrorCode());
     }
