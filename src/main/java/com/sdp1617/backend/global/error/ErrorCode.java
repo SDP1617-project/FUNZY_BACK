@@ -32,6 +32,11 @@ public enum ErrorCode {
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
     ARCHIVE_003(HttpStatus.BAD_REQUEST, "ARCHIVE_003", "Cannot like own archive card."),
 
+    CARD_001(HttpStatus.NOT_FOUND, "CARD_001", "존재하지 않는 마음카드입니다."),
+    CARD_002(HttpStatus.BAD_REQUEST, "CARD_002", "이미지 업로드가 완료되지 않았습니다."),
+    CARD_003(HttpStatus.BAD_REQUEST, "CARD_003", "지원하지 않는 이미지 형식입니다."),
+    CARD_004(HttpStatus.BAD_REQUEST, "CARD_004", "이미지 파일 크기가 허용 범위를 초과했습니다."),
+
     SOCIAL_001(HttpStatus.NOT_FOUND, "SOCIAL_001", "존재하지 않는 친구 코드입니다."),
     SOCIAL_002(HttpStatus.BAD_REQUEST, "SOCIAL_002", "본인에게는 팔로우 요청을 보낼 수 없습니다."),
     SOCIAL_003(HttpStatus.CONFLICT, "SOCIAL_003", "이미 친구인 회원입니다."),
