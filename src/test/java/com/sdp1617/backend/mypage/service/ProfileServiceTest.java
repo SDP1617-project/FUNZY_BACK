@@ -12,21 +12,28 @@ import com.sdp1617.backend.mypage.dto.NicknameUpdateRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImagePresignedUrlRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImageUploadCompleteRequest;
 import com.sdp1617.backend.mypage.dto.ProfileResponse;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -44,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -61,6 +69,9 @@ class ProfileServiceTest {
     @Mock
     private S3Presigner s3Presigner;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     private final S3Properties s3Properties = new S3Properties(
             new S3Properties.Credentials(null, null),
             new S3Properties.Region("ap-northeast-2"),
@@ -73,7 +84,11 @@ class ProfileServiceTest {
     @BeforeEach
     void setUp() {
         S3ImageService s3ImageService = new S3ImageService(s3Client, s3Presigner, s3Properties);
-        profileService = new ProfileService(memberRepository, s3ImageService);
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(new SimpleTransactionStatus());
+        });
+        profileService = new ProfileService(memberRepository, s3ImageService, transactionTemplate);
     }
 
     @AfterEach
@@ -130,6 +145,7 @@ class ProfileServiceTest {
         profileService.updateNickname(1L, new NicknameUpdateRequest("새닉네임"));
 
         assertEquals("새닉네임", member.getNickname());
+        verify(memberRepository).saveWithNicknameUniqueness(member);
     }
 
     @Test
@@ -216,13 +232,24 @@ class ProfileServiceTest {
     }
 
     private void stubValidPngUpload() {
+        byte[] pngBytes = validPngBytes();
         when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength(16L).build());
-        byte[] pngSignature = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0};
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) pngBytes.length).build());
         when(s3Client.getObject(any(GetObjectRequest.class)))
                 .thenReturn(new ResponseInputStream<>(
                         GetObjectResponse.builder().build(),
-                        AbortableInputStream.create(new ByteArrayInputStream(pngSignature))));
+                        AbortableInputStream.create(new ByteArrayInputStream(pngBytes))));
+    }
+
+    private byte[] validPngBytes() {
+        try {
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", out);
+            return out.toByteArray();
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
     }
 
     @Test
@@ -236,6 +263,51 @@ class ProfileServiceTest {
 
         assertNull(member.getProfileImageKey());
         assertNull(member.getProfileImageUrl());
+    }
+
+    @Test
+    void 매직바이트만_흉내내고_실제로_디코딩되지_않는_이미지는_MYPAGE_002_예외를_던진다() {
+        byte[] fakePng = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0};
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) fakePng.length).build());
+        when(s3Client.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().build(),
+                        AbortableInputStream.create(new ByteArrayInputStream(fakePng))));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> profileService.completeProfileImageUpload(
+                        1L, new ProfileImageUploadCompleteRequest("profiles/1/fake.png")));
+
+        assertEquals(ErrorCode.MYPAGE_002, exception.getErrorCode());
+    }
+
+    @Test
+    void 확장자와_실제_이미지_포맷이_다르면_MYPAGE_002_예외를_던진다() {
+        byte[] jpegBytesLabeledAsPng = validJpegBytes();
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) jpegBytesLabeledAsPng.length).build());
+        when(s3Client.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().build(),
+                        AbortableInputStream.create(new ByteArrayInputStream(jpegBytesLabeledAsPng))));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> profileService.completeProfileImageUpload(
+                        1L, new ProfileImageUploadCompleteRequest("profiles/1/mismatch.png")));
+
+        assertEquals(ErrorCode.MYPAGE_002, exception.getErrorCode());
+    }
+
+    private byte[] validJpegBytes() {
+        try {
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(image, "jpeg", out);
+            return out.toByteArray();
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
     }
 
     @Test

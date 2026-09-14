@@ -77,7 +77,7 @@ class AuthServiceTest {
         CustomException exception = assertThrows(CustomException.class, () -> authService.signUp(request));
 
         assertEquals(ErrorCode.AUTH_006, exception.getErrorCode());
-        verify(memberRepository, never()).save(any());
+        verify(memberRepository, never()).saveWithNicknameUniqueness(any());
     }
 
     @Test
@@ -114,7 +114,7 @@ class AuthServiceTest {
         authService.signUp(request);
 
         ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
-        verify(memberRepository).save(captor.capture());
+        verify(memberRepository).saveWithNicknameUniqueness(captor.capture());
         assertEquals("encoded-password", captor.getValue().getPassword());
     }
 
@@ -129,7 +129,7 @@ class AuthServiceTest {
         authService.signUp(request);
 
         ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
-        verify(memberRepository).save(captor.capture());
+        verify(memberRepository).saveWithNicknameUniqueness(captor.capture());
         assertEquals(request.toConsent(), captor.getValue().getConsent());
     }
 

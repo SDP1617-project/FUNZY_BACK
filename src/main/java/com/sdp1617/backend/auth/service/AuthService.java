@@ -54,7 +54,7 @@ public class AuthService {
                 request.nickname(),
                 request.toConsent()
         );
-        memberRepository.save(member);
+        memberRepository.saveWithNicknameUniqueness(member);
     }
 
     public boolean isNicknameAvailable(String nickname) {

@@ -2,7 +2,11 @@ package com.sdp1617.backend.auth.repository;
 
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Member;
+import com.sdp1617.backend.global.error.CustomException;
+import com.sdp1617.backend.global.error.ErrorCode;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -23,4 +27,32 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     @Modifying
     @Query("update Member m set m.failedLoginCount = m.failedLoginCount + 1 where m.id = :id")
     int incrementFailedLoginCount(@Param("id") Long id);
+
+    /**
+     * existsByNickname 체크 후 저장하는 방식은 동시 요청 사이에 경쟁 상태(race condition)가 있어
+     * 최종 방어선인 DB 유니크 제약 위반으로 실패할 수 있다. 그 경우를 그 자리에서 즉시 잡아
+     * (saveAndFlush로 커밋을 기다리지 않고 바로 제약 위반을 드러냄) AUTH_007로 매핑한다.
+     * Member는 email/provider+provider_id 유니크 제약도 함께 가지고 있으므로, 실제로 위반된
+     * 제약이 닉네임(uk_member_nickname)인 경우에만 AUTH_007로 바꾸고 그 외에는 원래 예외를
+     * 그대로 던져 GlobalExceptionHandler의 COMMON_005 처리로 흘려보낸다.
+     */
+    default Member saveWithNicknameUniqueness(Member member) {
+        try {
+            return saveAndFlush(member);
+        } catch (DataIntegrityViolationException exception) {
+            if (violatesNicknameConstraint(exception)) {
+                throw new CustomException(ErrorCode.AUTH_007);
+            }
+            throw exception;
+        }
+    }
+
+    private boolean violatesNicknameConstraint(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException constraintViolationException) {
+                return "uk_member_nickname".equalsIgnoreCase(constraintViolationException.getConstraintName());
+            }
+        }
+        return false;
+    }
 }

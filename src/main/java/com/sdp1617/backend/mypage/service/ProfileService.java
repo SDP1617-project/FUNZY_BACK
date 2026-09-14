@@ -13,9 +13,11 @@ import com.sdp1617.backend.mypage.dto.ProfileResponse;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +26,7 @@ public class ProfileService {
 
     private final MemberRepository memberRepository;
     private final S3ImageService s3ImageService;
+    private final TransactionTemplate transactionTemplate;
 
     public ProfileResponse getProfile(Long memberId) {
         Member member = findMember(memberId);
@@ -40,6 +43,7 @@ public class ProfileService {
             throw new CustomException(ErrorCode.AUTH_007);
         }
         member.updateNickname(request.nickname());
+        memberRepository.saveWithNicknameUniqueness(member);
     }
 
     public ProfileImagePresignedUrlResponse issueProfileImagePresignedUrl(
@@ -51,19 +55,27 @@ public class ProfileService {
         return ProfileImagePresignedUrlResponse.from(upload);
     }
 
-    @Transactional
+    /**
+     * S3 HEAD/GET 검증을 트랜잭션 밖에서 먼저 끝낸 뒤, DB 쓰기만 별도의 짧은 트랜잭션으로 묶는다.
+     * (같은 클래스 내 @Transactional 메서드를 this로 호출하면 프록시를 안 타므로 TransactionTemplate을 사용)
+     * 주의: NOT_SUPPORTED가 외부 트랜잭션을 중단시키고 TransactionTemplate이 별도로 즉시 커밋하므로,
+     * 이미 트랜잭션이 진행 중인 다른 @Transactional 메서드 안에서 이 메서드를 호출하면 안 된다(원자성이 깨짐).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public ProfileResponse completeProfileImageUpload(Long memberId, ProfileImageUploadCompleteRequest request) {
         s3ImageService.validateOwnership(request.imageKey(), imageKeyPrefix(memberId));
         s3ImageService.validateUploadedImage(
                 request.imageKey(), ErrorCode.MYPAGE_001, ErrorCode.MYPAGE_002, ErrorCode.MYPAGE_003);
 
-        Member member = findMember(memberId);
-        String previousImageKey = member.getProfileImageKey();
-        member.updateProfileImage(request.imageKey(), s3ImageService.buildImageUrl(request.imageKey()));
-        if (previousImageKey != null && !previousImageKey.equals(request.imageKey())) {
-            deleteAfterCommit(previousImageKey);
-        }
-        return new ProfileResponse(member.getNickname(), member.getProfileImageUrl(), member.getProvider());
+        return transactionTemplate.execute(status -> {
+            Member member = findMember(memberId);
+            String previousImageKey = member.getProfileImageKey();
+            member.updateProfileImage(request.imageKey(), s3ImageService.buildImageUrl(request.imageKey()));
+            if (previousImageKey != null && !previousImageKey.equals(request.imageKey())) {
+                deleteAfterCommit(previousImageKey);
+            }
+            return new ProfileResponse(member.getNickname(), member.getProfileImageUrl(), member.getProvider());
+        });
     }
 
     @Transactional

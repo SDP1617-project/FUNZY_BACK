@@ -29,7 +29,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -57,6 +59,7 @@ public class CardService {
     private final CardRepository cardRepository;
     private final EntityManager entityManager;
     private final S3ImageService s3ImageService;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -153,7 +156,13 @@ public class CardService {
         return CardStorageResponse.from(findAccessibleCard(memberId, cardId));
     }
 
-    @Transactional
+    /**
+     * S3 HEAD/GET 검증을 트랜잭션 밖에서 먼저 끝낸 뒤, DB 쓰기만 별도의 짧은 트랜잭션으로 묶는다.
+     * (같은 클래스 내 @Transactional 메서드를 this로 호출하면 프록시를 안 타므로 TransactionTemplate을 사용)
+     * 주의: NOT_SUPPORTED가 외부 트랜잭션을 중단시키고 TransactionTemplate이 별도로 즉시 커밋하므로,
+     * 이미 트랜잭션이 진행 중인 다른 @Transactional 메서드 안에서 이 메서드를 호출하면 안 된다(원자성이 깨짐).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CardListResponse completeImageUpload(
             Long senderId,
             Long cardId,
@@ -161,9 +170,11 @@ public class CardService {
     ) {
         validateImageKeyOwner(senderId, request.imageKey());
         validateUploadedImage(request.imageKey());
-        Card card = findWrittenCard(senderId, cardId);
-        card.updateImage(request.imageKey(), createImageUrl(request.imageKey()));
-        return CardListResponse.from(card);
+        return transactionTemplate.execute(status -> {
+            Card card = findWrittenCard(senderId, cardId);
+            card.updateImage(request.imageKey(), createImageUrl(request.imageKey()));
+            return CardListResponse.from(card);
+        });
     }
 
     @Transactional
@@ -172,33 +183,44 @@ public class CardService {
         cardRepository.delete(card);
     }
 
-    @Transactional
+    /**
+     * S3 HEAD/GET 검증을 트랜잭션 밖에서 먼저 끝낸 뒤, DB 쓰기만 별도의 짧은 트랜잭션으로 묶는다.
+     * (같은 클래스 내 @Transactional 메서드를 this로 호출하면 프록시를 안 타므로 TransactionTemplate을 사용)
+     * 주의: NOT_SUPPORTED가 외부 트랜잭션을 중단시키고 TransactionTemplate이 별도로 즉시 커밋하므로,
+     * 이미 트랜잭션이 진행 중인 다른 @Transactional 메서드 안에서 이 메서드를 호출하면 안 된다(원자성이 깨짐).
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CardResponse createCard(CardCreateRequest request){
         validateEnvelopCreateFields(request);
-        Envelop envelop = envelopRepository.findBySender_IdAndReceiver_Id(request.senderId(), request.receiverId())
-                .orElseGet(() -> createEnvelop(request));
+        String imageKey = normalizeImageKey(request.imageKey());
+        if (imageKey != null) {
+            validateImageKeyOwner(request.senderId(), imageKey);
+            validateUploadedImage(imageKey);
+        }
 
-        Card card = Card.create(
-                envelop,
-                request.title(),
-                request.category(),
-                request.link(),
-                request.linkTitle(),
-                request.content()
-        );
-        applyImageIfPresent(request.senderId(), request.imageKey(), card);
-        Card savedCard = cardRepository.save(card);
+        return transactionTemplate.execute(status -> {
+            Envelop envelop = envelopRepository.findBySender_IdAndReceiver_Id(request.senderId(), request.receiverId())
+                    .orElseGet(() -> createEnvelop(request));
 
-        return CardResponse.from(savedCard, createShareUrl(savedCard.getId()));
+            Card card = Card.create(
+                    envelop,
+                    request.title(),
+                    request.category(),
+                    request.link(),
+                    request.linkTitle(),
+                    request.content()
+            );
+            if (imageKey != null) {
+                card.updateImage(imageKey, createImageUrl(imageKey));
+            }
+            Card savedCard = cardRepository.save(card);
+
+            return CardResponse.from(savedCard, createShareUrl(savedCard.getId()));
+        });
     }
 
-    private void applyImageIfPresent(Long senderId, String imageKey, Card card) {
-        if (imageKey == null || imageKey.isBlank()) {
-            return;
-        }
-        validateImageKeyOwner(senderId, imageKey);
-        validateUploadedImage(imageKey);
-        card.updateImage(imageKey, createImageUrl(imageKey));
+    private String normalizeImageKey(String imageKey) {
+        return (imageKey == null || imageKey.isBlank()) ? null : imageKey;
     }
 
     private Envelop createEnvelop(CardCreateRequest request) {

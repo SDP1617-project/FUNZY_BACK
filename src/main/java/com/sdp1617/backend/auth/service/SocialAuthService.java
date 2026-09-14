@@ -62,7 +62,7 @@ public class SocialAuthService {
         }
 
         Member member = new Member(session.email(), nickname, consent, session.provider(), session.externalId());
-        memberRepository.save(member);
+        memberRepository.saveWithNicknameUniqueness(member);
 
         return tokenService.issueTokens(member.getId());
     }
