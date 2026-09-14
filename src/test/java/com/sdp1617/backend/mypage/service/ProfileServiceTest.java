@@ -12,9 +12,14 @@ import com.sdp1617.backend.mypage.dto.NicknameUpdateRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImagePresignedUrlRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImageUploadCompleteRequest;
 import com.sdp1617.backend.mypage.dto.ProfileResponse;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Field;
 import java.util.Optional;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -167,13 +172,24 @@ class ProfileServiceTest {
     }
 
     private void stubValidPngUpload() {
+        byte[] pngBytes = validPngBytes();
         when(s3Client.headObject(any(HeadObjectRequest.class)))
-                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength(16L).build());
-        byte[] pngSignature = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0};
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) pngBytes.length).build());
         when(s3Client.getObject(any(GetObjectRequest.class)))
                 .thenReturn(new ResponseInputStream<>(
                         GetObjectResponse.builder().build(),
-                        AbortableInputStream.create(new ByteArrayInputStream(pngSignature))));
+                        AbortableInputStream.create(new ByteArrayInputStream(pngBytes))));
+    }
+
+    private byte[] validPngBytes() {
+        try {
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", out);
+            return out.toByteArray();
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
     }
 
     @Test
@@ -187,6 +203,51 @@ class ProfileServiceTest {
 
         assertNull(member.getProfileImageKey());
         assertNull(member.getProfileImageUrl());
+    }
+
+    @Test
+    void 매직바이트만_흉내내고_실제로_디코딩되지_않는_이미지는_MYPAGE_002_예외를_던진다() {
+        byte[] fakePng = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, 0, 0, 0, 0};
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) fakePng.length).build());
+        when(s3Client.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().build(),
+                        AbortableInputStream.create(new ByteArrayInputStream(fakePng))));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> profileService.completeProfileImageUpload(
+                        1L, new ProfileImageUploadCompleteRequest("profiles/1/fake.png")));
+
+        assertEquals(ErrorCode.MYPAGE_002, exception.getErrorCode());
+    }
+
+    @Test
+    void 확장자와_실제_이미지_포맷이_다르면_MYPAGE_002_예외를_던진다() {
+        byte[] jpegBytesLabeledAsPng = validJpegBytes();
+        when(s3Client.headObject(any(HeadObjectRequest.class)))
+                .thenReturn(HeadObjectResponse.builder().contentType("image/png").contentLength((long) jpegBytesLabeledAsPng.length).build());
+        when(s3Client.getObject(any(GetObjectRequest.class)))
+                .thenReturn(new ResponseInputStream<>(
+                        GetObjectResponse.builder().build(),
+                        AbortableInputStream.create(new ByteArrayInputStream(jpegBytesLabeledAsPng))));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> profileService.completeProfileImageUpload(
+                        1L, new ProfileImageUploadCompleteRequest("profiles/1/mismatch.png")));
+
+        assertEquals(ErrorCode.MYPAGE_002, exception.getErrorCode());
+    }
+
+    private byte[] validJpegBytes() {
+        try {
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(image, "jpeg", out);
+            return out.toByteArray();
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
     }
 
     @Test

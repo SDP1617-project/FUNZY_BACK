@@ -20,9 +20,15 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -36,8 +42,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class S3ImageService {
 
-    private static final int IMAGE_SIGNATURE_READ_BYTES = 16;
     private static final long MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+    private static final long MAX_IMAGE_PIXELS = 40_000_000L;
     private static final Set<String> ALLOWED_IMAGE_CONTENT_TYPES = Set.of(
             "image/jpeg",
             "image/png",
@@ -99,7 +105,8 @@ public class S3ImageService {
         String contentType = normalizeContentType(objectMetadata.contentType(), invalidFormatError);
         validateContentType(contentType, invalidFormatError);
         validateImageSize(objectMetadata.contentLength(), invalidFormatError, tooLargeError);
-        validateImageSignature(imageKey, contentType, notFoundError, invalidFormatError);
+        byte[] imageBytes = readImageObject(imageKey, notFoundError, invalidFormatError);
+        validateImageDecodable(imageBytes, contentType, invalidFormatError);
     }
 
     public String buildImageUrl(String imageKey) {
@@ -149,31 +156,12 @@ public class S3ImageService {
         }
     }
 
-    private void validateImageSignature(
-            String imageKey,
-            String contentType,
-            ErrorCode notFoundError,
-            ErrorCode invalidFormatError
-    ) {
-        byte[] signature = readImageSignature(imageKey, notFoundError, invalidFormatError);
-        boolean valid = switch (contentType) {
-            case "image/jpeg" -> isJpeg(signature);
-            case "image/png" -> isPng(signature);
-            case "image/webp" -> isWebp(signature);
-            default -> false;
-        };
-        if (!valid) {
-            throw new CustomException(invalidFormatError);
-        }
-    }
-
-    private byte[] readImageSignature(String imageKey, ErrorCode notFoundError, ErrorCode invalidFormatError) {
+    private byte[] readImageObject(String imageKey, ErrorCode notFoundError, ErrorCode invalidFormatError) {
         try (ResponseInputStream<GetObjectResponse> object = s3Client.getObject(GetObjectRequest.builder()
                 .bucket(s3Properties.bucket())
                 .key(imageKey)
-                .range("bytes=0-" + (IMAGE_SIGNATURE_READ_BYTES - 1))
                 .build())) {
-            return object.readNBytes(IMAGE_SIGNATURE_READ_BYTES);
+            return object.readAllBytes();
         } catch (S3Exception exception) {
             if (exception.statusCode() == 404) {
                 throw new CustomException(notFoundError);
@@ -184,36 +172,56 @@ public class S3ImageService {
         }
     }
 
-    private boolean isJpeg(byte[] signature) {
-        return signature.length >= 3
-                && (signature[0] & 0xFF) == 0xFF
-                && (signature[1] & 0xFF) == 0xD8
-                && (signature[2] & 0xFF) == 0xFF;
-    }
-
-    private boolean isPng(byte[] signature) {
-        int[] pngSignature = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
-        if (signature.length < pngSignature.length) {
-            return false;
-        }
-        for (int i = 0; i < pngSignature.length; i++) {
-            if ((signature[i] & 0xFF) != pngSignature[i]) {
-                return false;
+    /**
+     * 매직바이트만이 아니라 실제로 디코딩까지 성공해야 유효한 이미지로 인정한다(CWE-434 대응).
+     * 애니메이션 WebP 등 다중 프레임 이미지는 정적 이미지 업로드 용도에 맞지 않아 거부한다.
+     */
+    private void validateImageDecodable(byte[] imageBytes, String contentType, ErrorCode invalidFormatError) {
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
+            if (input == null) {
+                throw new CustomException(invalidFormatError);
             }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                throw new CustomException(invalidFormatError);
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, false, true);
+                if (!matchesDeclaredFormat(reader.getFormatName(), contentType)) {
+                    throw new CustomException(invalidFormatError);
+                }
+                if (reader.getNumImages(true) > 1) {
+                    throw new CustomException(invalidFormatError);
+                }
+                long pixelCount = (long) reader.getWidth(0) * reader.getHeight(0);
+                if (pixelCount <= 0 || pixelCount > MAX_IMAGE_PIXELS) {
+                    // 헤더만으로 해상도를 먼저 확인해 디코딩 폭탄(작은 용량, 초대형 해상도)으로 인한 OOM을 막는다.
+                    throw new CustomException(invalidFormatError);
+                }
+                BufferedImage image = reader.read(0);
+                if (image.getWidth() <= 0 || image.getHeight() <= 0) {
+                    throw new CustomException(invalidFormatError);
+                }
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException | RuntimeException exception) {
+            if (exception instanceof CustomException customException) {
+                throw customException;
+            }
+            throw new CustomException(invalidFormatError);
         }
-        return true;
     }
 
-    private boolean isWebp(byte[] signature) {
-        return signature.length >= 12
-                && signature[0] == 'R'
-                && signature[1] == 'I'
-                && signature[2] == 'F'
-                && signature[3] == 'F'
-                && signature[8] == 'W'
-                && signature[9] == 'E'
-                && signature[10] == 'B'
-                && signature[11] == 'P';
+    private boolean matchesDeclaredFormat(String readerFormatName, String contentType) {
+        String normalizedFormatName = readerFormatName.toLowerCase(Locale.ROOT);
+        return switch (contentType) {
+            case "image/jpeg" -> normalizedFormatName.contains("jpeg");
+            case "image/png" -> normalizedFormatName.contains("png");
+            case "image/webp" -> normalizedFormatName.contains("webp");
+            default -> false;
+        };
     }
 
     private void validateContentType(String contentType, ErrorCode invalidFormatError) {
