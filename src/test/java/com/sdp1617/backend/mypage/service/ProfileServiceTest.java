@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -35,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -52,6 +55,9 @@ class ProfileServiceTest {
     @Mock
     private S3Presigner s3Presigner;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     private final S3Properties s3Properties = new S3Properties(
             new S3Properties.Credentials(null, null),
             new S3Properties.Region("ap-northeast-2"),
@@ -64,7 +70,11 @@ class ProfileServiceTest {
     @BeforeEach
     void setUp() {
         S3ImageService s3ImageService = new S3ImageService(s3Client, s3Presigner, s3Properties);
-        profileService = new ProfileService(memberRepository, s3ImageService);
+        lenient().when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(new SimpleTransactionStatus());
+        });
+        profileService = new ProfileService(memberRepository, s3ImageService, transactionTemplate);
     }
 
     private Member localMember() {
