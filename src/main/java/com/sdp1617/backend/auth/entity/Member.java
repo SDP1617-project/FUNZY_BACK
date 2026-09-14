@@ -22,10 +22,14 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "members",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_member_provider_provider_id",
-                columnNames = {"provider", "provider_id"}
-        )
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_member_email", columnNames = "email"),
+                @UniqueConstraint(name = "uk_member_nickname", columnNames = "nickname"),
+                @UniqueConstraint(
+                        name = "uk_member_provider_provider_id",
+                        columnNames = {"provider", "provider_id"}
+                )
+        }
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Member {
@@ -36,13 +40,13 @@ public class Member {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, length = 255)
+    @Column(length = 255)
     private String email;
 
     @Column(length = 255)
     private String password;
 
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(nullable = false, length = 20)
     private String nickname;
 
     @Column(name = "profile_image_key", length = 512)

@@ -42,6 +42,7 @@ public class ProfileService {
             throw new CustomException(ErrorCode.AUTH_007);
         }
         member.updateNickname(request.nickname());
+        memberRepository.saveWithNicknameUniqueness(member);
     }
 
     public ProfileImagePresignedUrlResponse issueProfileImagePresignedUrl(
