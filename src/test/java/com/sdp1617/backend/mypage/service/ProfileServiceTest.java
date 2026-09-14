@@ -114,6 +114,7 @@ class ProfileServiceTest {
         profileService.updateNickname(1L, new NicknameUpdateRequest("새닉네임"));
 
         assertEquals("새닉네임", member.getNickname());
+        verify(memberRepository).saveWithNicknameUniqueness(member);
     }
 
     @Test

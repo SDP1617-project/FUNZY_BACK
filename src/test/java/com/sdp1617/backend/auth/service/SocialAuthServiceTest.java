@@ -123,7 +123,7 @@ class SocialAuthServiceTest {
         socialAuthService.completeSignUp("signup-token", "닉네임", consent);
 
         ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
-        verify(memberRepository).save(captor.capture());
+        verify(memberRepository).saveWithNicknameUniqueness(captor.capture());
         assertEquals(consent, captor.getValue().getConsent());
     }
 
