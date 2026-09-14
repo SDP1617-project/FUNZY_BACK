@@ -14,16 +14,24 @@ import com.sdp1617.backend.mypage.dto.ProfileImageUploadCompleteRequest;
 import com.sdp1617.backend.mypage.dto.ProfileResponse;
 import java.io.ByteArrayInputStream;
 import java.lang.reflect.Field;
+import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -33,6 +41,7 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
@@ -65,6 +74,13 @@ class ProfileServiceTest {
     void setUp() {
         S3ImageService s3ImageService = new S3ImageService(s3Client, s3Presigner, s3Properties);
         profileService = new ProfileService(memberRepository, s3ImageService);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     private Member localMember() {
@@ -164,6 +180,39 @@ class ProfileServiceTest {
         profileService.completeProfileImageUpload(1L, new ProfileImageUploadCompleteRequest("profiles/1/new.png"));
 
         verify(s3Client).deleteObject(argThat((DeleteObjectRequest req) -> req.key().equals("profiles/1/old.png")));
+    }
+
+    @Test
+    void 트랜잭션_커밋_후_콜백은_S3_삭제를_기다리지_않고_즉시_리턴한다() throws InterruptedException {
+        Member member = localMember();
+        setId(member, 1L);
+        member.updateProfileImage("profiles/1/old.png", "https://example.com/profiles/1/old.png");
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        stubValidPngUpload();
+
+        CountDownLatch deleteStarted = new CountDownLatch(1);
+        CountDownLatch releaseDelete = new CountDownLatch(1);
+        when(s3Client.deleteObject(any(DeleteObjectRequest.class))).thenAnswer(invocation -> {
+            deleteStarted.countDown();
+            assertTrue(releaseDelete.await(1, TimeUnit.SECONDS));
+            return DeleteObjectResponse.builder().build();
+        });
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            profileService.completeProfileImageUpload(1L, new ProfileImageUploadCompleteRequest("profiles/1/new.png"));
+            List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+            assertEquals(1, synchronizations.size());
+
+            long start = System.nanoTime();
+            synchronizations.get(0).afterCommit();
+            long elapsedMillis = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+            assertTrue(elapsedMillis < 500, "afterCommit()은 S3 삭제를 기다리지 않고 즉시 리턴해야 한다 (실제: " + elapsedMillis + "ms)");
+            assertTrue(deleteStarted.await(1, TimeUnit.SECONDS), "S3 삭제는 별도 스레드에서 비동기로 실행되어야 한다");
+        } finally {
+            releaseDelete.countDown();
+        }
     }
 
     private void stubValidPngUpload() {

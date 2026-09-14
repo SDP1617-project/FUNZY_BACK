@@ -10,6 +10,7 @@ import com.sdp1617.backend.mypage.dto.ProfileImagePresignedUrlRequest;
 import com.sdp1617.backend.mypage.dto.ProfileImagePresignedUrlResponse;
 import com.sdp1617.backend.mypage.dto.ProfileImageUploadCompleteRequest;
 import com.sdp1617.backend.mypage.dto.ProfileResponse;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -98,7 +99,9 @@ public class ProfileService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                s3ImageService.deleteImageQuietly(imageKey);
+                // afterCommit()은 커밋 직후, 커넥션이 풀에 반납되기 전에 실행된다.
+                // 여기서 블로킹 S3 호출을 동기로 하면 그만큼 커넥션 반납이 늦어지므로 별도 스레드로 던진다.
+                CompletableFuture.runAsync(() -> s3ImageService.deleteImageQuietly(imageKey));
             }
         });
     }
