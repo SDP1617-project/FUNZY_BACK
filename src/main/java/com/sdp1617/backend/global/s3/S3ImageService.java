@@ -32,6 +32,9 @@ import java.util.Iterator;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 마음카드/프로필 등 여러 도메인이 공유하는 S3 이미지 업로드(presigned URL 발급 + 업로드 완료 검증) 로직.
@@ -49,6 +52,13 @@ public class S3ImageService {
             "image/png",
             "image/webp"
     );
+
+    /**
+     * 이전 이미지 삭제(deleteImageQuietlyAsync)용 fire-and-forget 실행기.
+     * 가상 스레드라 풀 크기 튜닝이 필요 없고, 병렬 스트림 등이 공유하는 ForkJoinPool.commonPool()과
+     * 자원을 다투지 않는다.
+     */
+    private static final ExecutorService IMAGE_DELETE_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
@@ -131,6 +141,22 @@ public class S3ImageService {
         } catch (SdkException exception) {
             log.warn("이전 S3 이미지 삭제 실패: key={}", imageKey, exception);
         }
+    }
+
+    /**
+     * deleteImageQuietly를 별도 스레드에서 실행한다. 트랜잭션 afterCommit 콜백 등
+     * DB 커넥션이 아직 반납되지 않은 시점에서 블로킹 S3 호출로 그 반납을 지연시키지 않기 위함.
+     * deleteImageQuietly가 잡지 못하는 예외(SdkException 외)까지 로그로 남긴다.
+     */
+    public void deleteImageQuietlyAsync(String imageKey) {
+        if (imageKey == null || imageKey.isBlank()) {
+            return;
+        }
+        CompletableFuture.runAsync(() -> deleteImageQuietly(imageKey), IMAGE_DELETE_EXECUTOR)
+                .exceptionally(exception -> {
+                    log.warn("비동기 S3 이미지 삭제 중 예상치 못한 예외: key={}", imageKey, exception);
+                    return null;
+                });
     }
 
     private HeadObjectResponse getImageObjectMetadata(String imageKey, ErrorCode notFoundError) {
