@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -134,6 +135,27 @@ class AuthServiceTest {
     }
 
     @Test
+    void 회원가입_시_이메일_인증_링크가_포함된_이벤트를_발행한다() {
+        when(memberRepository.existsByEmail(anyString())).thenReturn(false);
+        when(memberRepository.existsByNickname(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("encoded-password");
+        when(memberRepository.saveWithNicknameUniqueness(any())).thenAnswer(invocation -> {
+            Member saved = invocation.getArgument(0);
+            setId(saved, 1L);
+            return saved;
+        });
+        when(verificationTokenRepository.issue(eq("email-verification"), eq(1L), any())).thenReturn("token-value");
+
+        SignUpRequest request = new SignUpRequest("test@sdp1617.com", "Password1!", "Password1!", "닉네임", true, true, false, false);
+        authService.signUp(request);
+
+        ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals("test@sdp1617.com", captor.getValue().to());
+        assertTrue(captor.getValue().body().contains("http://localhost:3000/verify-email?token=token-value"));
+    }
+
+    @Test
     void 존재하지_않는_이메일로_로그인하면_AUTH_001_예외를_던진다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 
@@ -192,6 +214,7 @@ class AuthServiceTest {
     void 로그인_성공시_실패횟수를_초기화하고_토큰을_발급한다() {
         Member member = member("test@sdp1617.com", "encoded", "닉네임");
         member.increaseFailedLoginCount();
+        member.verifyEmail();
         setId(member, 1L);
         when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
         when(passwordEncoder.matches("Password1!", "encoded")).thenReturn(true);
@@ -202,6 +225,20 @@ class AuthServiceTest {
 
         assertEquals("access", response.accessToken());
         assertEquals(0, member.getFailedLoginCount());
+    }
+
+    @Test
+    void 비밀번호는_맞지만_이메일_미인증이면_AUTH_016_예외를_던진다() {
+        Member member = member("test@sdp1617.com", "encoded", "닉네임");
+        setId(member, 1L);
+        when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
+        when(passwordEncoder.matches("Password1!", "encoded")).thenReturn(true);
+
+        LoginRequest request = new LoginRequest("test@sdp1617.com", "Password1!");
+
+        CustomException exception = assertThrows(CustomException.class, () -> authService.login(request));
+
+        assertEquals(ErrorCode.AUTH_016, exception.getErrorCode());
     }
 
     @Test
@@ -305,6 +342,65 @@ class AuthServiceTest {
         assertFalse(member.isLocked());
         assertEquals(0, member.getFailedLoginCount());
         verify(eventPublisher).publishEvent(new AllSessionsRevokedEvent(1L));
+    }
+
+    @Test
+    void 유효한_토큰으로_이메일을_인증하면_emailVerified가_true가_된다() {
+        Member member = member("test@sdp1617.com", "encoded", "닉네임");
+        setId(member, 1L);
+        when(verificationTokenRepository.consume("email-verification", "token-value")).thenReturn(Optional.of(1L));
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+
+        authService.verifyEmail("token-value");
+
+        assertTrue(member.isEmailVerified());
+    }
+
+    @Test
+    void 만료되거나_잘못된_토큰으로_이메일_인증시_AUTH_011_예외를_던진다() {
+        when(verificationTokenRepository.consume("email-verification", "bad-token")).thenReturn(Optional.empty());
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> authService.verifyEmail("bad-token"));
+
+        assertEquals(ErrorCode.AUTH_011, exception.getErrorCode());
+    }
+
+    @Test
+    void 이메일_인증_재발송_요청시_존재하지_않는_이메일이면_조용히_무시한다() {
+        when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
+
+        authService.resendEmailVerification("nobody@sdp1617.com");
+
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(verificationTokenRepository, never()).issue(any(), any(), any());
+    }
+
+    @Test
+    void 이미_인증된_계정이면_재발송_요청을_조용히_무시한다() {
+        Member member = member("test@sdp1617.com", "encoded", "닉네임");
+        member.verifyEmail();
+        setId(member, 1L);
+        when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
+
+        authService.resendEmailVerification("test@sdp1617.com");
+
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(verificationTokenRepository, never()).issue(any(), any(), any());
+    }
+
+    @Test
+    void 미인증_계정이면_재발송_요청시_인증_링크가_포함된_이벤트를_발행한다() {
+        Member member = member("test@sdp1617.com", "encoded", "닉네임");
+        setId(member, 1L);
+        when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
+        when(verificationTokenRepository.issue("email-verification", 1L, Duration.ofMinutes(15))).thenReturn("token-value");
+
+        authService.resendEmailVerification("test@sdp1617.com");
+
+        ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertTrue(captor.getValue().body().contains("http://localhost:3000/verify-email?token=token-value"));
     }
 
     @Test

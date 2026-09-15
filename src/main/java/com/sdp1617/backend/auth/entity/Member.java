@@ -61,6 +61,14 @@ public class Member {
     @Column(nullable = false)
     private int failedLoginCount;
 
+    /**
+     * 신규 LOCAL 가입은 false로 시작해 이메일 인증 완료 시 true가 됨(로그인 조건).
+     * 소셜 가입은 provider가 이미 검증한 이메일이므로 생성 시점에 true.
+     * DB 컬럼 기본값을 true로 둬서, 이 필드가 추가되기 전부터 있던 기존 회원은 소급 인증 요구 없이 그대로 로그인 가능하도록 한다.
+     */
+    @Column(name = "email_verified", nullable = false, columnDefinition = "boolean default true")
+    private boolean emailVerified;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AuthProvider provider;
@@ -83,6 +91,7 @@ public class Member {
         this.consent = consent;
         this.failedLoginCount = 0;
         this.provider = AuthProvider.LOCAL;
+        this.emailVerified = false;
         this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
@@ -98,6 +107,7 @@ public class Member {
         this.failedLoginCount = 0;
         this.provider = provider;
         this.providerId = providerId;
+        this.emailVerified = true;
         this.pushNotificationEnabled = true;
         this.createdAt = LocalDateTime.now();
     }
@@ -120,6 +130,10 @@ public class Member {
 
     public void unlock() {
         resetFailedLoginCount();
+    }
+
+    public void verifyEmail() {
+        this.emailVerified = true;
     }
 
     public void changePassword(String newPassword) {
