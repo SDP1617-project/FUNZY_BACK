@@ -2,6 +2,8 @@ package com.sdp1617.backend.auth.controller;
 
 import com.sdp1617.backend.auth.dto.AccountUnlockConfirmRequest;
 import com.sdp1617.backend.auth.dto.AccountUnlockRequest;
+import com.sdp1617.backend.auth.dto.EmailVerificationConfirmRequest;
+import com.sdp1617.backend.auth.dto.EmailVerificationResendRequest;
 import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.NicknameCheckResponse;
 import com.sdp1617.backend.auth.dto.PasswordResetConfirmRequest;
@@ -41,6 +43,7 @@ public class AuthController {
             - 비밀번호는 8자 이상, 영문+숫자+특수문자 조합이어야 합니다.
             - 닉네임은 2~20자 이내여야 하며 중복될 수 없습니다.
             - 가입 완료 후 자동 로그인되지 않으며, 로그인 화면으로 이동해 별도로 로그인해야 합니다.
+            - 가입한 이메일로 인증 링크가 발송되며, 인증을 완료해야 로그인할 수 있습니다.
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "가입 성공",
@@ -122,10 +125,63 @@ public class AuthController {
         return ApiResponse.ok("닉네임 사용 가능 여부를 조회했습니다.", response);
     }
 
+    @Operation(summary = "이메일 인증 메일 재발송", description = """
+            가입 시 발송된 이메일 인증 링크를 다시 받습니다.
+            - 가입되지 않은 이메일이거나 이미 인증이 완료된 계정(소셜 포함)이어도 항상 동일하게 200을 반환합니다(계정 존재/인증 여부 비노출).
+            - 발송된 링크는 15분간 유효합니다.
+            """)
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요청 접수 (실제 존재/인증 여부와 무관하게 항상 200)",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": true,
+                              "code": "200",
+                              "message": "이메일 인증 링크를 발송했습니다.",
+                              "data": null
+                            }
+                            """)))
+    })
+    @PostMapping("/email/verify/resend")
+    public ApiResponse<Void> resendEmailVerification(@Valid @RequestBody EmailVerificationResendRequest request) {
+        authService.resendEmailVerification(request.email());
+        return ApiResponse.ok("이메일 인증 링크를 발송했습니다.", null);
+    }
+
+    @Operation(summary = "이메일 인증", description = """
+            이메일로 받은 토큰으로 회원가입 시 등록한 이메일 소유를 인증합니다.
+            - 인증이 완료되어야 로그인할 수 있습니다.
+            """)
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "인증 성공",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": true,
+                              "code": "200",
+                              "message": "이메일 인증이 완료되었습니다.",
+                              "data": null
+                            }
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "토큰 만료 또는 유효하지 않음",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "AUTH_011",
+                              "message": "유효하지 않거나 만료된 링크입니다.",
+                              "data": null
+                            }
+                            """)))
+    })
+    @PostMapping("/email/verify")
+    public ApiResponse<Void> verifyEmail(@Valid @RequestBody EmailVerificationConfirmRequest request) {
+        authService.verifyEmail(request.token());
+        return ApiResponse.ok("이메일 인증이 완료되었습니다.", null);
+    }
+
     @Operation(summary = "이메일 로그인", description = """
             이메일/비밀번호로 로그인합니다.
             - 존재하지 않는 이메일, 비밀번호 불일치, 소셜 전용 계정으로 로그인 시도한 경우 모두 동일한 오류(AUTH_001)로 응답합니다. 계정 존재 여부가 외부에 드러나지 않도록 하기 위한 의도된 동작입니다.
             - 5회 연속 로그인 실패 시 계정이 잠기며, 이메일 인증(계정 잠금 해제)으로만 풀 수 있습니다.
+            - 비밀번호까지 올바르게 입력했더라도 가입 시 발송된 이메일 인증을 아직 완료하지 않았다면 로그인할 수 없습니다(AUTH_016).
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "로그인 성공",
@@ -148,6 +204,15 @@ public class AuthController {
                               "success": false,
                               "code": "AUTH_001",
                               "message": "아이디 또는 비밀번호가 일치하지 않습니다.",
+                              "data": null
+                            }
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "이메일 미인증",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "AUTH_016",
+                              "message": "이메일 인증이 필요합니다. 인증 메일을 확인해주세요.",
                               "data": null
                             }
                             """))),

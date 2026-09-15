@@ -24,6 +24,7 @@ public class AuthService {
 
     private static final String PASSWORD_RESET_PURPOSE = "password-reset";
     private static final String ACCOUNT_UNLOCK_PURPOSE = "account-unlock";
+    private static final String EMAIL_VERIFICATION_PURPOSE = "email-verification";
     private static final Duration VERIFICATION_TOKEN_TTL = Duration.ofMinutes(15);
 
     private final MemberRepository memberRepository;
@@ -55,6 +56,7 @@ public class AuthService {
                 request.toConsent()
         );
         memberRepository.saveWithNicknameUniqueness(member);
+        sendVerificationEmail(member);
     }
 
     public boolean isNicknameAvailable(String nickname) {
@@ -81,8 +83,41 @@ public class AuthService {
             throw new CustomException(ErrorCode.AUTH_001);
         }
 
+        if (!member.isEmailVerified()) {
+            throw new CustomException(ErrorCode.AUTH_016);
+        }
+
         member.resetFailedLoginCount();
         return tokenService.issueTokens(member.getId());
+    }
+
+    @Transactional
+    public void resendEmailVerification(String email) {
+        // 존재하지 않는 이메일이거나 이미 인증된 계정(소셜 포함)이면 조용히 무시 (계정 존재 여부 비노출)
+        memberRepository.findByEmail(email)
+                .filter(member -> !member.isEmailVerified())
+                .ifPresent(this::sendVerificationEmail);
+    }
+
+    @Transactional
+    public void verifyEmail(String token) {
+        Long memberId = verificationTokenRepository.consume(EMAIL_VERIFICATION_PURPOSE, token)
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_011));
+
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
+
+        member.verifyEmail();
+    }
+
+    private void sendVerificationEmail(Member member) {
+        String token = verificationTokenRepository.issue(EMAIL_VERIFICATION_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
+        String link = frontendUrl + "/verify-email?token=" + token;
+        eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+                member.getEmail(),
+                "이메일 인증 안내",
+                "아래 링크에서 이메일 인증을 완료해주세요 (15분간 유효):\n" + link
+        ));
     }
 
     @Transactional
