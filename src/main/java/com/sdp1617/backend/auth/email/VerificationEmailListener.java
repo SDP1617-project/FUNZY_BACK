@@ -13,6 +13,6 @@ public class VerificationEmailListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handle(VerificationLinkIssuedEvent event) {
-        emailSender.send(event.to(), event.subject(), event.body());
+        emailSender.send(event.to(), event.subject(), event.plainText(), event.htmlBody());
     }
 }
