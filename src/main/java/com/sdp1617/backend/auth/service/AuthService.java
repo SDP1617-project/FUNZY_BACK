@@ -2,6 +2,7 @@ package com.sdp1617.backend.auth.service;
 
 import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.SignUpRequest;
+import com.sdp1617.backend.auth.email.EmailTemplateRenderer;
 import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.dto.TokenResponse;
@@ -10,6 +11,7 @@ import com.sdp1617.backend.auth.repository.VerificationTokenRepository;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import java.time.Duration;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -33,9 +35,13 @@ public class AuthService {
     private final LoginAttemptRecorder loginAttemptRecorder;
     private final VerificationTokenRepository verificationTokenRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final EmailTemplateRenderer emailTemplateRenderer;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    @Value("${app.mail.logo-url}")
+    private String logoUrl;
 
     @Transactional
     public void signUp(SignUpRequest request) {
@@ -113,11 +119,31 @@ public class AuthService {
     private void sendVerificationEmail(Member member) {
         String token = verificationTokenRepository.issue(EMAIL_VERIFICATION_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
         String link = frontendUrl + "/verify-email?token=" + token;
-        eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+        publishVerificationLinkEmail(
                 member.getEmail(),
                 "이메일 인증 안내",
-                "아래 링크에서 이메일 인증을 완료해주세요 (15분간 유효):\n" + link
+                "이메일 인증",
+                "아래 버튼을 눌러 이메일 인증을 완료해주세요.",
+                link,
+                "이메일 인증하기"
+        );
+    }
+
+    /** 이메일 인증/비밀번호 재설정/계정 잠금 해제 세 메일이 공유하는 템플릿(verification-link.html) 렌더링 헬퍼. */
+    private void publishVerificationLinkEmail(
+            String to, String subject, String title, String message, String link, String buttonText
+    ) {
+        String html = emailTemplateRenderer.render("verification-link", Map.of(
+                "title", title,
+                "message", message,
+                "link", link,
+                "buttonText", buttonText,
+                "ttlMinutes", VERIFICATION_TOKEN_TTL.toMinutes(),
+                "logoUrl", logoUrl
         ));
+        String plainText = title + "\n\n" + message + "\n\n" + link
+                + "\n\n(" + VERIFICATION_TOKEN_TTL.toMinutes() + "분간 유효합니다)";
+        eventPublisher.publishEvent(new VerificationLinkIssuedEvent(to, subject, plainText, html));
     }
 
     @Transactional
@@ -128,11 +154,14 @@ public class AuthService {
                 .ifPresent(member -> {
                     String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
                     String link = frontendUrl + "/reset-password?token=" + token;
-                    eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+                    publishVerificationLinkEmail(
                             member.getEmail(),
                             "비밀번호 재설정 안내",
-                            "아래 링크에서 비밀번호를 재설정해주세요 (15분간 유효):\n" + link
-                    ));
+                            "비밀번호 재설정",
+                            "아래 버튼을 눌러 비밀번호를 재설정해주세요.",
+                            link,
+                            "비밀번호 재설정하기"
+                    );
                 });
     }
 
@@ -162,11 +191,14 @@ public class AuthService {
         memberRepository.findByEmail(email).ifPresent(member -> {
             String token = verificationTokenRepository.issue(ACCOUNT_UNLOCK_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
             String link = frontendUrl + "/unlock-account?token=" + token;
-            eventPublisher.publishEvent(new VerificationLinkIssuedEvent(
+            publishVerificationLinkEmail(
                     member.getEmail(),
                     "계정 잠금 해제 안내",
-                    "아래 링크에서 계정 잠금을 해제해주세요 (15분간 유효):\n" + link
-            ));
+                    "계정 잠금 해제",
+                    "아래 버튼을 눌러 계정 잠금을 해제해주세요.",
+                    link,
+                    "잠금 해제하기"
+            );
         });
     }
 

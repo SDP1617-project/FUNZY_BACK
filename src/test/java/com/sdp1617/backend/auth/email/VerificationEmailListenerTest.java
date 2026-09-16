@@ -19,10 +19,10 @@ class VerificationEmailListenerTest {
 
     @Test
     void 커밋_이후_이벤트를_받으면_이메일을_발송한다() {
-        VerificationLinkIssuedEvent event = new VerificationLinkIssuedEvent("test@sdp1617.com", "제목", "본문");
+        VerificationLinkIssuedEvent event = new VerificationLinkIssuedEvent("test@sdp1617.com", "제목", "텍스트 본문", "<p>HTML 본문</p>");
 
         listener.handle(event);
 
-        verify(emailSender).send("test@sdp1617.com", "제목", "본문");
+        verify(emailSender).send("test@sdp1617.com", "제목", "텍스트 본문", "<p>HTML 본문</p>");
     }
 }

@@ -3,6 +3,7 @@ package com.sdp1617.backend.auth.service;
 import com.sdp1617.backend.auth.dto.LoginRequest;
 import com.sdp1617.backend.auth.dto.SignUpRequest;
 import com.sdp1617.backend.auth.dto.TokenResponse;
+import com.sdp1617.backend.auth.email.EmailTemplateRenderer;
 import com.sdp1617.backend.auth.email.VerificationLinkIssuedEvent;
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Consent;
@@ -13,6 +14,7 @@ import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import java.lang.reflect.Field;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,8 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +59,9 @@ class AuthServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private EmailTemplateRenderer emailTemplateRenderer;
+
     @InjectMocks
     private AuthService authService;
 
@@ -63,6 +70,16 @@ class AuthServiceTest {
         Field field = AuthService.class.getDeclaredField("frontendUrl");
         field.setAccessible(true);
         field.set(authService, "http://localhost:3000");
+
+        Field logoUrlField = AuthService.class.getDeclaredField("logoUrl");
+        logoUrlField.setAccessible(true);
+        logoUrlField.set(authService, "https://sdp-funzy.s3.ap-northeast-2.amazonaws.com/static/funzy-logo.png");
+
+        // 실제 렌더링은 EmailTemplateRendererTest에서 검증하므로, 여기선 link 값만 그대로 돌려준다.
+        lenient().when(emailTemplateRenderer.render(anyString(), anyMap())).thenAnswer(invocation -> {
+            Map<String, Object> variables = invocation.getArgument(1);
+            return "link=" + variables.get("link");
+        });
     }
 
     private Member member(String email, String password, String nickname) {
@@ -152,7 +169,7 @@ class AuthServiceTest {
         ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertEquals("test@sdp1617.com", captor.getValue().to());
-        assertTrue(captor.getValue().body().contains("http://localhost:3000/verify-email?token=token-value"));
+        assertTrue(captor.getValue().plainText().contains("http://localhost:3000/verify-email?token=token-value"));
     }
 
     @Test
@@ -280,7 +297,7 @@ class AuthServiceTest {
         ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertEquals("test@sdp1617.com", captor.getValue().to());
-        assertTrue(captor.getValue().body().contains("http://localhost:3000/reset-password?token=token-value"));
+        assertTrue(captor.getValue().plainText().contains("http://localhost:3000/reset-password?token=token-value"));
     }
 
     @Test
@@ -400,7 +417,7 @@ class AuthServiceTest {
 
         ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
-        assertTrue(captor.getValue().body().contains("http://localhost:3000/verify-email?token=token-value"));
+        assertTrue(captor.getValue().plainText().contains("http://localhost:3000/verify-email?token=token-value"));
     }
 
     @Test
