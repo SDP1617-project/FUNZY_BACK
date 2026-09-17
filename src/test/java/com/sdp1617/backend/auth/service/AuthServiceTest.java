@@ -16,6 +16,7 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -65,6 +70,9 @@ class AuthServiceTest {
     @Mock
     private VerificationRequestRateLimiter rateLimiter;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private AuthService authService;
 
@@ -85,6 +93,13 @@ class AuthServiceTest {
         });
 
         lenient().when(rateLimiter.isAllowed(anyString(), anyString(), anyString())).thenReturn(true);
+
+        // TransactionTemplate은 목이라 executeWithoutResult가 그냥 삼켜지므로, 전달받은 콜백을 직접 실행해준다.
+        lenient().doAnswer(invocation -> {
+            Consumer<TransactionStatus> action = invocation.getArgument(0);
+            action.accept(new SimpleTransactionStatus());
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
     }
 
     private Member member(String email, String password, String nickname) {
