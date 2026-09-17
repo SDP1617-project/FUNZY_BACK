@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -129,6 +130,7 @@ public class AuthController {
             가입 시 발송된 이메일 인증 링크를 다시 받습니다.
             - 가입되지 않은 이메일이거나 이미 인증이 완료된 계정(소셜 포함)이어도 항상 동일하게 200을 반환합니다(계정 존재/인증 여부 비노출).
             - 발송된 링크는 15분간 유효합니다.
+            - 남용 방지를 위해 IP/이메일 기준으로 rate limit이 적용됩니다. 제한을 초과해도 존재 여부가 드러나지 않도록 동일하게 200을 반환하고 메일만 조용히 보내지 않습니다.
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요청 접수 (실제 존재/인증 여부와 무관하게 항상 200)",
@@ -142,8 +144,10 @@ public class AuthController {
                             """)))
     })
     @PostMapping("/email/verify/resend")
-    public ApiResponse<Void> resendEmailVerification(@Valid @RequestBody EmailVerificationResendRequest request) {
-        authService.resendEmailVerification(request.email());
+    public ApiResponse<Void> resendEmailVerification(
+            @Valid @RequestBody EmailVerificationResendRequest request, HttpServletRequest httpRequest
+    ) {
+        authService.resendEmailVerification(resolveClientIp(httpRequest), request.email());
         return ApiResponse.ok("이메일 인증 링크를 발송했습니다.", null);
     }
 
@@ -236,6 +240,7 @@ public class AuthController {
             입력한 이메일로 비밀번호 재설정 링크를 발송합니다.
             - 가입되지 않은 이메일이거나 소셜 전용 계정이어도 항상 동일하게 200을 반환합니다(계정 존재 여부 비노출). 실제 메일은 가입된 이메일 계정에만 발송됩니다.
             - 발송된 링크는 15분간 유효합니다.
+            - 남용 방지를 위해 IP/이메일 기준으로 rate limit이 적용됩니다. 제한을 초과해도 존재 여부가 드러나지 않도록 동일하게 200을 반환하고 메일만 조용히 보내지 않습니다.
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요청 접수 (실제 존재 여부와 무관하게 항상 200)",
@@ -249,8 +254,10 @@ public class AuthController {
                             """)))
     })
     @PostMapping("/password/reset-request")
-    public ApiResponse<Void> requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
-        authService.requestPasswordReset(request.email());
+    public ApiResponse<Void> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest
+    ) {
+        authService.requestPasswordReset(resolveClientIp(httpRequest), request.email());
         return ApiResponse.ok("비밀번호 재설정 링크를 발송했습니다.", null);
     }
 
@@ -298,6 +305,7 @@ public class AuthController {
             5회 로그인 실패로 잠긴 계정의 잠금 해제 링크를 이메일로 발송합니다.
             - 가입되지 않은 이메일이어도 항상 동일하게 200을 반환합니다(계정 존재 여부 비노출).
             - 발송된 링크는 15분간 유효합니다.
+            - 남용 방지를 위해 IP/이메일 기준으로 rate limit이 적용됩니다. 제한을 초과해도 존재 여부가 드러나지 않도록 동일하게 200을 반환하고 메일만 조용히 보내지 않습니다.
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "요청 접수 (실제 존재 여부와 무관하게 항상 200)",
@@ -311,9 +319,20 @@ public class AuthController {
                             """)))
     })
     @PostMapping("/account/unlock-request")
-    public ApiResponse<Void> requestAccountUnlock(@Valid @RequestBody AccountUnlockRequest request) {
-        authService.requestAccountUnlock(request.email());
+    public ApiResponse<Void> requestAccountUnlock(
+            @Valid @RequestBody AccountUnlockRequest request, HttpServletRequest httpRequest
+    ) {
+        authService.requestAccountUnlock(resolveClientIp(httpRequest), request.email());
         return ApiResponse.ok("계정 잠금 해제 링크를 발송했습니다.", null);
+    }
+
+    /**
+     * X-Forwarded-For는 클라이언트가 임의로 지정할 수 있는 헤더라, 이를 신뢰하려면 앞단에 있는
+     * 리버스 프록시/로드밸런서가 이 값을 덮어쓴다는 보장이 필요하다(예: server.forward-headers-strategy 설정).
+     * 지금은 그런 신뢰 가능한 프록시 설정이 없으므로, 스푸핑 불가능한 소켓 주소만 사용한다.
+     */
+    private String resolveClientIp(HttpServletRequest request) {
+        return request.getRemoteAddr();
     }
 
     @Operation(summary = "계정 잠금 해제", description = """

@@ -36,6 +36,7 @@ public class AuthService {
     private final VerificationTokenRepository verificationTokenRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EmailTemplateRenderer emailTemplateRenderer;
+    private final VerificationRequestRateLimiter rateLimiter;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -98,7 +99,11 @@ public class AuthService {
     }
 
     @Transactional
-    public void resendEmailVerification(String email) {
+    public void resendEmailVerification(String clientIp, String email) {
+        // rate limit 초과 시에도 계정 존재 여부가 드러나지 않도록 예외 없이 조용히 무시
+        if (!rateLimiter.isAllowed(EMAIL_VERIFICATION_PURPOSE, clientIp, email)) {
+            return;
+        }
         // 존재하지 않는 이메일이거나 이미 인증된 계정(소셜 포함)이면 조용히 무시 (계정 존재 여부 비노출)
         memberRepository.findByEmail(email)
                 .filter(member -> !member.isEmailVerified())
@@ -147,7 +152,10 @@ public class AuthService {
     }
 
     @Transactional
-    public void requestPasswordReset(String email) {
+    public void requestPasswordReset(String clientIp, String email) {
+        if (!rateLimiter.isAllowed(PASSWORD_RESET_PURPOSE, clientIp, email)) {
+            return;
+        }
         // 소셜 전용 계정은 비밀번호가 없으므로 재설정 대상에서 제외 (계정 존재 여부가 드러나지 않도록 조용히 무시)
         memberRepository.findByEmail(email)
                 .filter(Member::hasPassword)
@@ -187,7 +195,10 @@ public class AuthService {
     }
 
     @Transactional
-    public void requestAccountUnlock(String email) {
+    public void requestAccountUnlock(String clientIp, String email) {
+        if (!rateLimiter.isAllowed(ACCOUNT_UNLOCK_PURPOSE, clientIp, email)) {
+            return;
+        }
         memberRepository.findByEmail(email).ifPresent(member -> {
             String token = verificationTokenRepository.issue(ACCOUNT_UNLOCK_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
             String link = frontendUrl + "/unlock-account?token=" + token;
