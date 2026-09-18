@@ -17,7 +17,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +38,8 @@ public class AuthService {
     private final VerificationTokenRepository verificationTokenRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EmailTemplateRenderer emailTemplateRenderer;
+    private final VerificationRequestRateLimiter rateLimiter;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
@@ -97,12 +101,23 @@ public class AuthService {
         return tokenService.issueTokens(member.getId());
     }
 
-    @Transactional
-    public void resendEmailVerification(String email) {
-        // 존재하지 않는 이메일이거나 이미 인증된 계정(소셜 포함)이면 조용히 무시 (계정 존재 여부 비노출)
-        memberRepository.findByEmail(email)
-                .filter(member -> !member.isEmailVerified())
-                .ifPresent(this::sendVerificationEmail);
+    /**
+     * rate limit 체크를 트랜잭션 밖에서 먼저 끝낸다 — 클래스 기본값(readOnly 트랜잭션)을 그대로 두면
+     * 거부되는 요청도 메서드 진입과 동시에 DB 커넥션을 잡았다 놓게 되어, 정작 rate limiter가
+     * 필요한 부하 상황에서 "저렴하게 거부"라는 목적을 못 이룬다.
+     * (같은 클래스 내 @Transactional 메서드를 this로 호출하면 프록시를 안 타므로 TransactionTemplate을 사용)
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void resendEmailVerification(String clientIp, String email) {
+        // rate limit 초과 시에도 계정 존재 여부가 드러나지 않도록 예외 없이 조용히 무시
+        if (!rateLimiter.isAllowed(EMAIL_VERIFICATION_PURPOSE, clientIp, email)) {
+            return;
+        }
+        transactionTemplate.executeWithoutResult(status ->
+                // 존재하지 않는 이메일이거나 이미 인증된 계정(소셜 포함)이면 조용히 무시 (계정 존재 여부 비노출)
+                memberRepository.findByEmail(email)
+                        .filter(member -> !member.isEmailVerified())
+                        .ifPresent(this::sendVerificationEmail));
     }
 
     @Transactional
@@ -146,23 +161,28 @@ public class AuthService {
         eventPublisher.publishEvent(new VerificationLinkIssuedEvent(to, subject, plainText, html));
     }
 
-    @Transactional
-    public void requestPasswordReset(String email) {
-        // 소셜 전용 계정은 비밀번호가 없으므로 재설정 대상에서 제외 (계정 존재 여부가 드러나지 않도록 조용히 무시)
-        memberRepository.findByEmail(email)
-                .filter(Member::hasPassword)
-                .ifPresent(member -> {
-                    String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
-                    String link = frontendUrl + "/reset-password?token=" + token;
-                    publishVerificationLinkEmail(
-                            member.getEmail(),
-                            "비밀번호 재설정 안내",
-                            "비밀번호 재설정",
-                            "아래 버튼을 눌러 비밀번호를 재설정해주세요.",
-                            link,
-                            "비밀번호 재설정하기"
-                    );
-                });
+    /** rate limit 체크를 트랜잭션 밖에서 먼저 끝내는 이유는 {@link #resendEmailVerification} 참고. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void requestPasswordReset(String clientIp, String email) {
+        if (!rateLimiter.isAllowed(PASSWORD_RESET_PURPOSE, clientIp, email)) {
+            return;
+        }
+        transactionTemplate.executeWithoutResult(status ->
+                // 소셜 전용 계정은 비밀번호가 없으므로 재설정 대상에서 제외 (계정 존재 여부가 드러나지 않도록 조용히 무시)
+                memberRepository.findByEmail(email)
+                        .filter(Member::hasPassword)
+                        .ifPresent(member -> {
+                            String token = verificationTokenRepository.issue(PASSWORD_RESET_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
+                            String link = frontendUrl + "/reset-password?token=" + token;
+                            publishVerificationLinkEmail(
+                                    member.getEmail(),
+                                    "비밀번호 재설정 안내",
+                                    "비밀번호 재설정",
+                                    "아래 버튼을 눌러 비밀번호를 재설정해주세요.",
+                                    link,
+                                    "비밀번호 재설정하기"
+                            );
+                        }));
     }
 
     @Transactional
@@ -186,20 +206,25 @@ public class AuthService {
         eventPublisher.publishEvent(new AllSessionsRevokedEvent(memberId));
     }
 
-    @Transactional
-    public void requestAccountUnlock(String email) {
-        memberRepository.findByEmail(email).ifPresent(member -> {
-            String token = verificationTokenRepository.issue(ACCOUNT_UNLOCK_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
-            String link = frontendUrl + "/unlock-account?token=" + token;
-            publishVerificationLinkEmail(
-                    member.getEmail(),
-                    "계정 잠금 해제 안내",
-                    "계정 잠금 해제",
-                    "아래 버튼을 눌러 계정 잠금을 해제해주세요.",
-                    link,
-                    "잠금 해제하기"
-            );
-        });
+    /** rate limit 체크를 트랜잭션 밖에서 먼저 끝내는 이유는 {@link #resendEmailVerification} 참고. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void requestAccountUnlock(String clientIp, String email) {
+        if (!rateLimiter.isAllowed(ACCOUNT_UNLOCK_PURPOSE, clientIp, email)) {
+            return;
+        }
+        transactionTemplate.executeWithoutResult(status ->
+                memberRepository.findByEmail(email).ifPresent(member -> {
+                    String token = verificationTokenRepository.issue(ACCOUNT_UNLOCK_PURPOSE, member.getId(), VERIFICATION_TOKEN_TTL);
+                    String link = frontendUrl + "/unlock-account?token=" + token;
+                    publishVerificationLinkEmail(
+                            member.getEmail(),
+                            "계정 잠금 해제 안내",
+                            "계정 잠금 해제",
+                            "아래 버튼을 눌러 계정 잠금을 해제해주세요.",
+                            link,
+                            "잠금 해제하기"
+                    );
+                }));
     }
 
     @Transactional

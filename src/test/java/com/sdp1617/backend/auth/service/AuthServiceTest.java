@@ -16,6 +16,7 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -33,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -62,6 +67,12 @@ class AuthServiceTest {
     @Mock
     private EmailTemplateRenderer emailTemplateRenderer;
 
+    @Mock
+    private VerificationRequestRateLimiter rateLimiter;
+
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private AuthService authService;
 
@@ -80,6 +91,15 @@ class AuthServiceTest {
             Map<String, Object> variables = invocation.getArgument(1);
             return "link=" + variables.get("link");
         });
+
+        lenient().when(rateLimiter.isAllowed(anyString(), anyString(), anyString())).thenReturn(true);
+
+        // TransactionTemplate은 목이라 executeWithoutResult가 그냥 삼켜지므로, 전달받은 콜백을 직접 실행해준다.
+        lenient().doAnswer(invocation -> {
+            Consumer<TransactionStatus> action = invocation.getArgument(0);
+            action.accept(new SimpleTransactionStatus());
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
     }
 
     private Member member(String email, String password, String nickname) {
@@ -292,7 +312,7 @@ class AuthServiceTest {
         when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
         when(verificationTokenRepository.issue("password-reset", 1L, Duration.ofMinutes(15))).thenReturn("token-value");
 
-        authService.requestPasswordReset("test@sdp1617.com");
+        authService.requestPasswordReset("127.0.0.1", "test@sdp1617.com");
 
         ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
@@ -306,7 +326,7 @@ class AuthServiceTest {
         setId(member, 1L);
         when(memberRepository.findByEmail("social@sdp1617.com")).thenReturn(Optional.of(member));
 
-        authService.requestPasswordReset("social@sdp1617.com");
+        authService.requestPasswordReset("127.0.0.1", "social@sdp1617.com");
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
@@ -329,20 +349,40 @@ class AuthServiceTest {
     void 비밀번호_재설정_요청시_존재하지_않는_이메일이면_조용히_무시한다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 
-        authService.requestPasswordReset("nobody@sdp1617.com");
+        authService.requestPasswordReset("127.0.0.1", "nobody@sdp1617.com");
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
     }
 
     @Test
+    void 비밀번호_재설정_요청이_rate_limit에_걸리면_계정_조회_없이_조용히_무시한다() {
+        when(rateLimiter.isAllowed("password-reset", "127.0.0.1", "test@sdp1617.com")).thenReturn(false);
+
+        authService.requestPasswordReset("127.0.0.1", "test@sdp1617.com");
+
+        verify(memberRepository, never()).findByEmail(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void 계정_잠금_해제_요청시_존재하지_않는_이메일이면_조용히_무시한다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 
-        authService.requestAccountUnlock("nobody@sdp1617.com");
+        authService.requestAccountUnlock("127.0.0.1", "nobody@sdp1617.com");
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
+    }
+
+    @Test
+    void 계정_잠금_해제_요청이_rate_limit에_걸리면_계정_조회_없이_조용히_무시한다() {
+        when(rateLimiter.isAllowed("account-unlock", "127.0.0.1", "test@sdp1617.com")).thenReturn(false);
+
+        authService.requestAccountUnlock("127.0.0.1", "test@sdp1617.com");
+
+        verify(memberRepository, never()).findByEmail(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -387,10 +427,20 @@ class AuthServiceTest {
     void 이메일_인증_재발송_요청시_존재하지_않는_이메일이면_조용히_무시한다() {
         when(memberRepository.findByEmail("nobody@sdp1617.com")).thenReturn(Optional.empty());
 
-        authService.resendEmailVerification("nobody@sdp1617.com");
+        authService.resendEmailVerification("127.0.0.1", "nobody@sdp1617.com");
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
+    }
+
+    @Test
+    void 이메일_인증_재발송_요청이_rate_limit에_걸리면_계정_조회_없이_조용히_무시한다() {
+        when(rateLimiter.isAllowed("email-verification", "127.0.0.1", "test@sdp1617.com")).thenReturn(false);
+
+        authService.resendEmailVerification("127.0.0.1", "test@sdp1617.com");
+
+        verify(memberRepository, never()).findByEmail(any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -400,7 +450,7 @@ class AuthServiceTest {
         setId(member, 1L);
         when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
 
-        authService.resendEmailVerification("test@sdp1617.com");
+        authService.resendEmailVerification("127.0.0.1", "test@sdp1617.com");
 
         verify(eventPublisher, never()).publishEvent(any());
         verify(verificationTokenRepository, never()).issue(any(), any(), any());
@@ -413,7 +463,7 @@ class AuthServiceTest {
         when(memberRepository.findByEmail("test@sdp1617.com")).thenReturn(Optional.of(member));
         when(verificationTokenRepository.issue("email-verification", 1L, Duration.ofMinutes(15))).thenReturn("token-value");
 
-        authService.resendEmailVerification("test@sdp1617.com");
+        authService.resendEmailVerification("127.0.0.1", "test@sdp1617.com");
 
         ArgumentCaptor<VerificationLinkIssuedEvent> captor = ArgumentCaptor.forClass(VerificationLinkIssuedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
