@@ -4,6 +4,7 @@ import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
+import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -21,6 +22,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     Optional<Member> findByEmail(String email);
 
     Optional<Member> findByProviderAndProviderId(AuthProvider provider, String providerId);
+
+    List<Member> findByProviderNot(AuthProvider provider);
 
     Optional<Member> findByFollowCode(String followCode);
 
