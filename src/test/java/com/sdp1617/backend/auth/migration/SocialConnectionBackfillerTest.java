@@ -7,7 +7,9 @@ import com.sdp1617.backend.auth.entity.SocialConnection;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.SocialConnectionRepository;
 import java.lang.reflect.Field;
+import java.sql.SQLException;
 import java.util.List;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -97,11 +99,33 @@ class SocialConnectionBackfillerTest {
         when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
         when(socialConnectionRepository.existsByMember_IdAndProvider(2L, AuthProvider.GOOGLE)).thenReturn(false);
         when(socialConnectionRepository.saveAndFlush(any()))
-                .thenThrow(new DataIntegrityViolationException("다른 인스턴스가 먼저 연결함"))
+                .thenThrow(uniqueConstraintViolation())
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         backfiller.run(null); // 예외 없이 끝까지 실행되어야 함
 
         verify(socialConnectionRepository, org.mockito.Mockito.times(2)).saveAndFlush(any());
+    }
+
+    @Test
+    void 유니크_제약이_아닌_무결성_위반은_삼키지_않고_실패로_기록하되_다른_회원_백필은_계속된다() {
+        Member corrupted = socialMember(1L, AuthProvider.KAKAO, "12345");
+        Member next = socialMember(2L, AuthProvider.GOOGLE, "67890");
+        when(memberRepository.findByProviderNot(AuthProvider.LOCAL)).thenReturn(List.of(corrupted, next));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialConnectionRepository.existsByMember_IdAndProvider(2L, AuthProvider.GOOGLE)).thenReturn(false);
+        when(socialConnectionRepository.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("providerId NOT NULL 위반 등 다른 원인"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        backfiller.run(null); // FAILED로 기록될 뿐, run() 자체가 예외를 던지거나 멈추면 안 됨
+
+        verify(socialConnectionRepository, org.mockito.Mockito.times(2)).saveAndFlush(any());
+    }
+
+    private DataIntegrityViolationException uniqueConstraintViolation() {
+        ConstraintViolationException cause = new ConstraintViolationException(
+                "duplicate key", new SQLException("duplicate"), "uk_social_connection_provider_provider_id");
+        return new DataIntegrityViolationException("다른 인스턴스가 먼저 연결함", cause);
     }
 }
