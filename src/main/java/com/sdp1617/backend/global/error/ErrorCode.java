@@ -28,6 +28,8 @@ public enum ErrorCode {
     AUTH_014(HttpStatus.BAD_REQUEST, "AUTH_014", "소셜 전용 계정은 비밀번호를 변경할 수 없습니다."),
     AUTH_015(HttpStatus.BAD_REQUEST, "AUTH_015", "현재 비밀번호가 일치하지 않습니다."),
     AUTH_016(HttpStatus.FORBIDDEN, "AUTH_016", "이메일 인증이 필요합니다. 인증 메일을 확인해주세요."),
+    AUTH_017(HttpStatus.CONFLICT, "AUTH_017", "이미 다른 계정에 연결된 소셜 계정입니다."),
+    AUTH_018(HttpStatus.CONFLICT, "AUTH_018", "이미 연결된 소셜 계정입니다."),
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
