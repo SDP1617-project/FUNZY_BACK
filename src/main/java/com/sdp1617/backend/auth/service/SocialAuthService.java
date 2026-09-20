@@ -13,11 +13,11 @@ import com.sdp1617.backend.auth.social.SocialSignupSession;
 import com.sdp1617.backend.auth.social.SocialUserInfo;
 import com.sdp1617.backend.auth.social.SocialUserInfoProvider;
 import com.sdp1617.backend.auth.social.SocialUserInfoProviderRegistry;
+import com.sdp1617.backend.global.error.ConstraintViolations;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -112,13 +112,9 @@ public class SocialAuthService {
     }
 
     private boolean violatesProviderConnectionConstraint(DataIntegrityViolationException exception) {
-        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ConstraintViolationException constraintViolationException) {
-                String constraintName = constraintViolationException.getConstraintName();
-                return "uk_member_provider_provider_id".equalsIgnoreCase(constraintName)
-                        || "uk_social_connection_provider_provider_id".equalsIgnoreCase(constraintName);
-            }
-        }
-        return false;
+        return ConstraintViolations.nameOf(exception)
+                .filter(name -> "uk_member_provider_provider_id".equalsIgnoreCase(name)
+                        || "uk_social_connection_provider_provider_id".equalsIgnoreCase(name))
+                .isPresent();
     }
 }

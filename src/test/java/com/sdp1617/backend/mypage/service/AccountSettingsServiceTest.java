@@ -4,24 +4,40 @@ import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.auth.repository.MemberRepository;
+import com.sdp1617.backend.auth.repository.SocialConnectionRepository;
 import com.sdp1617.backend.auth.service.AllSessionsRevokedEvent;
 import com.sdp1617.backend.auth.service.TokenService;
+import com.sdp1617.backend.auth.social.SocialUserInfo;
+import com.sdp1617.backend.auth.social.SocialUserInfoProvider;
+import com.sdp1617.backend.auth.social.SocialUserInfoProviderRegistry;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
 import java.lang.reflect.Field;
+import java.sql.SQLException;
 import java.util.Optional;
+import java.util.function.Consumer;
+import org.hibernate.exception.ConstraintViolationException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +48,15 @@ class AccountSettingsServiceTest {
     private MemberRepository memberRepository;
 
     @Mock
+    private SocialConnectionRepository socialConnectionRepository;
+
+    @Mock
+    private SocialUserInfoProviderRegistry socialUserInfoProviderRegistry;
+
+    @Mock
+    private SocialUserInfoProvider kakaoProvider;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -40,8 +65,21 @@ class AccountSettingsServiceTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    @Mock
+    private TransactionTemplate transactionTemplate;
+
     @InjectMocks
     private AccountSettingsService accountSettingsService;
+
+    @BeforeEach
+    void setUp() {
+        // TransactionTemplate은 목이라 executeWithoutResult가 그냥 삼켜지므로, 전달받은 콜백을 직접 실행해준다.
+        lenient().doAnswer(invocation -> {
+            Consumer<TransactionStatus> action = invocation.getArgument(0);
+            action.accept(new SimpleTransactionStatus());
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
+    }
 
     private Member localMember() {
         return new Member("test@sdp1617.com", "encoded", "닉네임", Consent.requiredOnly());
@@ -151,5 +189,75 @@ class AccountSettingsServiceTest {
                 () -> accountSettingsService.withdraw(1L));
 
         assertEquals(ErrorCode.AUTH_002, exception.getErrorCode());
+    }
+
+    @Test
+    void 소셜_계정을_정상적으로_연결한다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialUserInfoProviderRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
+        when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "social@kakao.com"));
+        when(socialConnectionRepository.existsByProviderAndProviderId(AuthProvider.KAKAO, "12345")).thenReturn(false);
+
+        accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token");
+
+        verify(socialConnectionRepository).saveAndFlush(any());
+    }
+
+    @Test
+    void 이미_본인_계정에_연결된_provider면_외부_인증_호출_없이_AUTH_018_예외를_던진다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(true);
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
+
+        assertEquals(ErrorCode.AUTH_018, exception.getErrorCode());
+        verify(socialUserInfoProviderRegistry, never()).get(any());
+    }
+
+    @Test
+    void 다른_계정에_이미_연결된_소셜계정이면_AUTH_017_예외를_던진다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialUserInfoProviderRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
+        when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "other@kakao.com"));
+        when(socialConnectionRepository.existsByProviderAndProviderId(AuthProvider.KAKAO, "12345")).thenReturn(true);
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
+
+        assertEquals(ErrorCode.AUTH_017, exception.getErrorCode());
+        verify(socialConnectionRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void 연결_저장_시점의_경쟁으로_유니크_제약이_위반되면_적절한_에러코드로_매핑한다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialUserInfoProviderRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
+        when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "social@kakao.com"));
+        when(socialConnectionRepository.existsByProviderAndProviderId(AuthProvider.KAKAO, "12345")).thenReturn(false);
+        when(socialConnectionRepository.saveAndFlush(any()))
+                .thenThrow(constraintViolation("uk_social_connection_provider_provider_id"));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
+
+        assertEquals(ErrorCode.AUTH_017, exception.getErrorCode());
+    }
+
+    private DataIntegrityViolationException constraintViolation(String constraintName) {
+        ConstraintViolationException cause = new ConstraintViolationException(
+                "duplicate key", new SQLException("duplicate"), constraintName);
+        return new DataIntegrityViolationException("constraint violated", cause);
     }
 }

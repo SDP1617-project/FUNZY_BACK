@@ -3,6 +3,7 @@ package com.sdp1617.backend.mypage.controller;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
 import com.sdp1617.backend.mypage.dto.LogoutRequest;
 import com.sdp1617.backend.mypage.dto.PasswordChangeRequest;
+import com.sdp1617.backend.mypage.dto.SocialConnectionAddRequest;
 import com.sdp1617.backend.mypage.service.AccountSettingsService;
 import com.sdp1617.backend.global.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,6 +64,59 @@ public class AccountSettingsController {
             @Parameter(hidden = true) @AuthenticationPrincipal Long memberId
     ) {
         return ApiResponse.ok("연결 계정을 조회했습니다.", accountSettingsService.getConnectedAccount(memberId));
+    }
+
+    @Operation(summary = "소셜 계정 연결 추가", description = """
+            현재 로그인된 본인 계정에 새 소셜 provider를 추가로 연결합니다.
+            - 연결 성공 시 이후 해당 provider로도 로그인할 수 있습니다.
+            - 이메일이 같아도 자동으로 다른 계정과 병합하지 않으며, 항상 현재 로그인된 회원에 연결됩니다.
+            """)
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "연결 성공",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": true,
+                              "code": "200",
+                              "message": "소셜 계정이 연결되었습니다.",
+                              "data": null
+                            }
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "이미 연결됨 (본인 또는 다른 계정)",
+                    content = @Content(mediaType = "application/json", examples = {
+                            @ExampleObject(name = "본인 계정에 이미 연결된 provider", value = """
+                                    {
+                                      "success": false,
+                                      "code": "AUTH_018",
+                                      "message": "이미 연결된 소셜 계정입니다.",
+                                      "data": null
+                                    }
+                                    """),
+                            @ExampleObject(name = "다른 계정에 이미 연결된 소셜 계정", value = """
+                                    {
+                                      "success": false,
+                                      "code": "AUTH_017",
+                                      "message": "이미 다른 계정에 연결된 소셜 계정입니다.",
+                                      "data": null
+                                    }
+                                    """)
+                    })),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "소셜 인증 실패 (유효하지 않거나 만료된 토큰)",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "AUTH_013",
+                              "message": "소셜 인증에 실패했습니다.",
+                              "data": null
+                            }
+                            """)))
+    })
+    @PostMapping("/connections")
+    public ApiResponse<Void> connectSocialAccount(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Valid @RequestBody SocialConnectionAddRequest request
+    ) {
+        accountSettingsService.connectSocialAccount(memberId, request.provider(), request.token());
+        return ApiResponse.ok("소셜 계정이 연결되었습니다.", null);
     }
 
     @Operation(summary = "비밀번호 변경", description = """
