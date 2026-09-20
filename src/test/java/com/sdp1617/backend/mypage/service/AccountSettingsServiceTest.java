@@ -3,6 +3,7 @@ package com.sdp1617.backend.mypage.service;
 import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Consent;
 import com.sdp1617.backend.auth.entity.Member;
+import com.sdp1617.backend.auth.entity.SocialConnection;
 import com.sdp1617.backend.auth.repository.MemberRepository;
 import com.sdp1617.backend.auth.repository.SocialConnectionRepository;
 import com.sdp1617.backend.auth.service.AllSessionsRevokedEvent;
@@ -238,7 +239,7 @@ class AccountSettingsServiceTest {
     }
 
     @Test
-    void 연결_저장_시점의_경쟁으로_유니크_제약이_위반되면_적절한_에러코드로_매핑한다() {
+    void 저장_시점에_다른_회원이_먼저_연결해서_경쟁에_지면_AUTH_017을_던진다() {
         Member member = localMember();
         setId(member, 1L);
         when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
@@ -249,10 +250,60 @@ class AccountSettingsServiceTest {
         when(socialConnectionRepository.saveAndFlush(any()))
                 .thenThrow(constraintViolation("uk_social_connection_provider_provider_id"));
 
+        Member otherMember = localMember();
+        setId(otherMember, 99L);
+        SocialConnection winnerConnection = SocialConnection.create(otherMember, AuthProvider.KAKAO, "12345");
+        when(socialConnectionRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "12345"))
+                .thenReturn(Optional.of(winnerConnection));
+
         CustomException exception = assertThrows(CustomException.class,
                 () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
 
         assertEquals(ErrorCode.AUTH_017, exception.getErrorCode());
+    }
+
+    @Test
+    void 본인이_같은_소셜계정을_동시에_연결시도해서_경쟁에_지면_제약이름과_무관하게_AUTH_018을_던진다() {
+        // DB가 provider+providerId 제약 위반만 보고해도, 실제로는 본인이 먼저 연결에 성공한
+        // 것이라면(동시에 같은 소셜 계정을 두 번 연결 시도) "다른 계정에 연결됨"이 아니라
+        // "이미 연결됨"으로 정확히 매핑돼야 한다.
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialUserInfoProviderRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
+        when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "social@kakao.com"));
+        when(socialConnectionRepository.existsByProviderAndProviderId(AuthProvider.KAKAO, "12345")).thenReturn(false);
+        when(socialConnectionRepository.saveAndFlush(any()))
+                .thenThrow(constraintViolation("uk_social_connection_provider_provider_id"));
+
+        SocialConnection winnerConnection = SocialConnection.create(member, AuthProvider.KAKAO, "12345");
+        when(socialConnectionRepository.findByProviderAndProviderId(AuthProvider.KAKAO, "12345"))
+                .thenReturn(Optional.of(winnerConnection));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
+
+        assertEquals(ErrorCode.AUTH_018, exception.getErrorCode());
+    }
+
+    @Test
+    void member_provider_제약_위반이면_조회_없이_바로_AUTH_018을_던진다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.existsByMember_IdAndProvider(1L, AuthProvider.KAKAO)).thenReturn(false);
+        when(socialUserInfoProviderRegistry.get(AuthProvider.KAKAO)).thenReturn(kakaoProvider);
+        when(kakaoProvider.fetchUserInfo("token")).thenReturn(new SocialUserInfo("12345", "social@kakao.com"));
+        when(socialConnectionRepository.existsByProviderAndProviderId(AuthProvider.KAKAO, "12345")).thenReturn(false);
+        when(socialConnectionRepository.saveAndFlush(any()))
+                .thenThrow(constraintViolation("uk_social_connection_member_provider"));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.connectSocialAccount(1L, AuthProvider.KAKAO, "token"));
+
+        assertEquals(ErrorCode.AUTH_018, exception.getErrorCode());
+        verify(socialConnectionRepository, never()).findByProviderAndProviderId(any(), any());
     }
 
     private DataIntegrityViolationException constraintViolation(String constraintName) {

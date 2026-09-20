@@ -105,17 +105,29 @@ public class AccountSettingsService {
             transactionTemplate.executeWithoutResult(status ->
                     socialConnectionRepository.saveAndFlush(SocialConnection.create(member, provider, userInfo.externalId())));
         } catch (DataIntegrityViolationException exception) {
-            throw new CustomException(resolveConnectionConflict(exception).orElseThrow(() -> exception));
+            throw new CustomException(
+                    resolveConnectionConflict(exception, memberId, provider, userInfo.externalId())
+                            .orElseThrow(() -> exception));
         }
     }
 
-    private Optional<ErrorCode> resolveConnectionConflict(DataIntegrityViolationException exception) {
+    /**
+     * 본인이 같은 소셜 계정을 동시에 두 번 연결 시도하면 uk_social_connection_provider_provider_id와
+     * uk_social_connection_member_provider가 같은 insert 때문에 동시에 위반되는데, DB는 그중 하나의
+     * 제약 이름만 보고한다. 하필 provider_provider_id 쪽이 보고되면 제약 이름만으로는 "본인과의
+     * 경쟁"과 "다른 회원과의 경쟁"을 구분할 수 없으므로, 실제 기존 연결을 다시 조회해 회원을 비교한다.
+     * member_provider 제약은 정의상 항상 이 memberId 자신에 대한 것이므로 그 경우는 바로 AUTH_018.
+     */
+    private Optional<ErrorCode> resolveConnectionConflict(
+            DataIntegrityViolationException exception, Long memberId, AuthProvider provider, String externalId) {
         return ConstraintViolations.nameOf(exception).flatMap(name -> {
-            if ("uk_social_connection_provider_provider_id".equalsIgnoreCase(name)) {
-                return Optional.of(ErrorCode.AUTH_017);
-            }
             if ("uk_social_connection_member_provider".equalsIgnoreCase(name)) {
                 return Optional.of(ErrorCode.AUTH_018);
+            }
+            if ("uk_social_connection_provider_provider_id".equalsIgnoreCase(name)) {
+                return Optional.of(socialConnectionRepository.findByProviderAndProviderId(provider, externalId)
+                        .map(existing -> existing.getMember().getId().equals(memberId) ? ErrorCode.AUTH_018 : ErrorCode.AUTH_017)
+                        .orElse(ErrorCode.AUTH_017));
             }
             return Optional.empty();
         });
