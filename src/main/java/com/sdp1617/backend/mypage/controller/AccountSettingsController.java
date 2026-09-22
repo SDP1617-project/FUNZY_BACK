@@ -1,5 +1,6 @@
 package com.sdp1617.backend.mypage.controller;
 
+import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
 import com.sdp1617.backend.mypage.dto.LogoutRequest;
 import com.sdp1617.backend.mypage.dto.PasswordChangeRequest;
@@ -19,6 +20,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,28 +35,29 @@ public class AccountSettingsController {
     private final AccountSettingsService accountSettingsService;
 
     @Operation(summary = "연결 계정 조회", description = """
-            현재 로그인 방식(LOCAL/KAKAO/GOOGLE/NAVER)과 비밀번호 보유 여부를 조회합니다.
-            - 소셜 전용 계정은 hasPassword가 false이며, 이 경우 비밀번호 변경 메뉴를 노출하지 않아야 합니다.
+            현재 연결된 소셜 provider 목록과 비밀번호 보유 여부를 조회합니다.
+            - 회원 1명이 로컬 비밀번호 + 소셜 여러 개를 동시에 가질 수 있습니다.
+            - hasPassword가 false면 비밀번호 변경 메뉴를 노출하지 않아야 합니다.
             """)
     @ApiResponses(value = {
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "조회 성공",
                     content = @Content(mediaType = "application/json",
                             schema = @Schema(implementation = ConnectedAccountResponse.class),
                             examples = {
-                            @ExampleObject(name = "이메일 가입 계정", value = """
+                            @ExampleObject(name = "이메일 가입 + 소셜 연결 없음", value = """
                                     {
                                       "success": true,
                                       "code": "200",
                                       "message": "연결 계정을 조회했습니다.",
-                                      "data": { "provider": "LOCAL", "hasPassword": true }
+                                      "data": { "connectedProviders": [], "hasPassword": true }
                                     }
                                     """),
-                            @ExampleObject(name = "소셜 가입 계정", value = """
+                            @ExampleObject(name = "소셜 전용 계정 (연결 2개)", value = """
                                     {
                                       "success": true,
                                       "code": "200",
                                       "message": "연결 계정을 조회했습니다.",
-                                      "data": { "provider": "KAKAO", "hasPassword": false }
+                                      "data": { "connectedProviders": ["KAKAO", "GOOGLE"], "hasPassword": false }
                                     }
                                     """)
                     }))
@@ -117,6 +120,48 @@ public class AccountSettingsController {
     ) {
         accountSettingsService.connectSocialAccount(memberId, request.provider(), request.token());
         return ApiResponse.ok("소셜 계정이 연결되었습니다.", null);
+    }
+
+    @Operation(summary = "소셜 계정 연결 해제", description = """
+            현재 로그인된 본인 계정에서 지정한 provider의 소셜 연결을 해제합니다.
+            - 비밀번호가 없고(소셜 전용 계정) 연결된 소셜이 이것 하나뿐이면 해제할 수 없습니다(로그인 수단 소실 방지).
+            """)
+    @ApiResponses(value = {
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "해제 성공",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": true,
+                              "code": "200",
+                              "message": "소셜 계정 연결이 해제되었습니다.",
+                              "data": null
+                            }
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "마지막 남은 로그인 수단",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "AUTH_020",
+                              "message": "마지막 남은 로그인 수단은 연결 해제할 수 없습니다.",
+                              "data": null
+                            }
+                            """))),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "연결되지 않은 소셜 계정",
+                    content = @Content(mediaType = "application/json", examples = @ExampleObject(value = """
+                            {
+                              "success": false,
+                              "code": "AUTH_019",
+                              "message": "연결되지 않은 소셜 계정입니다.",
+                              "data": null
+                            }
+                            """)))
+    })
+    @DeleteMapping("/connections/{provider}")
+    public ApiResponse<Void> disconnectSocialAccount(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long memberId,
+            @Parameter(description = "해제할 소셜 provider", example = "KAKAO") @PathVariable AuthProvider provider
+    ) {
+        accountSettingsService.disconnectSocialAccount(memberId, provider);
+        return ApiResponse.ok("소셜 계정 연결이 해제되었습니다.", null);
     }
 
     @Operation(summary = "비밀번호 변경", description = """

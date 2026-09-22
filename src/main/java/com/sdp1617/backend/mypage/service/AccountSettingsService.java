@@ -13,6 +13,7 @@ import com.sdp1617.backend.global.error.ConstraintViolations;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -40,7 +41,11 @@ public class AccountSettingsService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
 
-        return new ConnectedAccountResponse(member.getProvider(), member.hasPassword());
+        List<AuthProvider> connectedProviders = socialConnectionRepository.findByMember_Id(memberId).stream()
+                .map(SocialConnection::getProvider)
+                .toList();
+
+        return new ConnectedAccountResponse(connectedProviders, member.hasPassword());
     }
 
     @Transactional
@@ -109,6 +114,30 @@ public class AccountSettingsService {
                     resolveConnectionConflict(exception, memberId, provider, userInfo.externalId())
                             .orElseThrow(() -> exception));
         }
+    }
+
+    /**
+     * 연결된 소셜 provider 하나를 해제한다. 비밀번호가 없고(소셜 전용 계정) 연결된 소셜이 이것
+     * 하나뿐이면, 해제 시 로그인할 방법이 아예 없어지므로 거부한다(AUTH_020).
+     * 서로 다른 provider에 대한 해제 요청이 동시에 들어오는 경쟁을 막기 위해 회원 행에 비관적
+     * 쓰기 락을 걸어 직렬화한다 — {@link MemberRepository#findByIdForUpdate} 참고.
+     */
+    @Transactional
+    public void disconnectSocialAccount(Long memberId, AuthProvider provider) {
+        Member member = memberRepository.findByIdForUpdate(memberId)
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_002));
+
+        List<SocialConnection> connections = socialConnectionRepository.findByMember_Id(memberId);
+        SocialConnection connection = connections.stream()
+                .filter(c -> c.getProvider() == provider)
+                .findFirst()
+                .orElseThrow(() -> new CustomException(ErrorCode.AUTH_019));
+
+        if (!member.hasPassword() && connections.size() <= 1) {
+            throw new CustomException(ErrorCode.AUTH_020);
+        }
+
+        socialConnectionRepository.delete(connection);
     }
 
     /**
