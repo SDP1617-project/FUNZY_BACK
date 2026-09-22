@@ -16,6 +16,7 @@ import com.sdp1617.backend.global.error.ErrorCode;
 import com.sdp1617.backend.mypage.dto.ConnectedAccountResponse;
 import java.lang.reflect.Field;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import org.hibernate.exception.ConstraintViolationException;
@@ -103,11 +104,14 @@ class AccountSettingsServiceTest {
     @Test
     void 연결_계정을_조회한다() {
         Member member = socialMember();
+        setId(member, 1L);
         when(memberRepository.findById(1L)).thenReturn(Optional.of(member));
+        SocialConnection connection = SocialConnection.create(member, AuthProvider.KAKAO, "12345");
+        when(socialConnectionRepository.findByMember_Id(1L)).thenReturn(List.of(connection));
 
         ConnectedAccountResponse response = accountSettingsService.getConnectedAccount(1L);
 
-        assertEquals(AuthProvider.KAKAO, response.provider());
+        assertEquals(List.of(AuthProvider.KAKAO), response.connectedProviders());
         assertFalse(response.hasPassword());
     }
 
@@ -304,6 +308,61 @@ class AccountSettingsServiceTest {
 
         assertEquals(ErrorCode.AUTH_018, exception.getErrorCode());
         verify(socialConnectionRepository, never()).findByProviderAndProviderId(any(), any());
+    }
+
+    @Test
+    void 소셜_연결을_정상적으로_해제한다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(member));
+        SocialConnection connection = SocialConnection.create(member, AuthProvider.KAKAO, "12345");
+        SocialConnection other = SocialConnection.create(member, AuthProvider.GOOGLE, "67890");
+        when(socialConnectionRepository.findByMember_Id(1L)).thenReturn(List.of(connection, other));
+
+        accountSettingsService.disconnectSocialAccount(1L, AuthProvider.KAKAO);
+
+        verify(socialConnectionRepository).delete(connection);
+    }
+
+    @Test
+    void 비밀번호가_있으면_마지막_소셜연결도_해제할_수_있다() {
+        Member member = localMember(); // 비밀번호 보유
+        setId(member, 1L);
+        when(memberRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(member));
+        SocialConnection connection = SocialConnection.create(member, AuthProvider.KAKAO, "12345");
+        when(socialConnectionRepository.findByMember_Id(1L)).thenReturn(List.of(connection));
+
+        accountSettingsService.disconnectSocialAccount(1L, AuthProvider.KAKAO);
+
+        verify(socialConnectionRepository).delete(connection);
+    }
+
+    @Test
+    void 비밀번호가_없고_마지막_남은_소셜연결이면_AUTH_020_예외를_던진다() {
+        Member member = socialMember(); // 비밀번호 없음
+        setId(member, 1L);
+        when(memberRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(member));
+        SocialConnection connection = SocialConnection.create(member, AuthProvider.KAKAO, "12345");
+        when(socialConnectionRepository.findByMember_Id(1L)).thenReturn(List.of(connection));
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.disconnectSocialAccount(1L, AuthProvider.KAKAO));
+
+        assertEquals(ErrorCode.AUTH_020, exception.getErrorCode());
+        verify(socialConnectionRepository, never()).delete(any());
+    }
+
+    @Test
+    void 연결돼있지_않은_provider를_해제하려하면_AUTH_019_예외를_던진다() {
+        Member member = localMember();
+        setId(member, 1L);
+        when(memberRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(member));
+        when(socialConnectionRepository.findByMember_Id(1L)).thenReturn(List.of());
+
+        CustomException exception = assertThrows(CustomException.class,
+                () -> accountSettingsService.disconnectSocialAccount(1L, AuthProvider.KAKAO));
+
+        assertEquals(ErrorCode.AUTH_019, exception.getErrorCode());
     }
 
     private DataIntegrityViolationException constraintViolation(String constraintName) {

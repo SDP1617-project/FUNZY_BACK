@@ -4,11 +4,13 @@ import com.sdp1617.backend.auth.entity.AuthProvider;
 import com.sdp1617.backend.auth.entity.Member;
 import com.sdp1617.backend.global.error.CustomException;
 import com.sdp1617.backend.global.error.ErrorCode;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -24,6 +26,17 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     List<Member> findByProviderNot(AuthProvider provider);
 
     Optional<Member> findByFollowCode(String followCode);
+
+    /**
+     * 같은 회원에 대한 소셜 연결 해제 요청 두 개가 동시에 들어오면(예: KAKAO/GOOGLE 동시 해제),
+     * 각자 상대방의 삭제를 못 본 채로 "마지막 수단 아님"을 통과해 회원이 비밀번호도 소셜 연결도
+     * 전부 없는 상태(완전 잠김)가 될 수 있다. 비관적 쓰기 락으로 회원 행을 잠가 이 요청들을
+     * 직렬화한다 — 먼저 잠근 트랜잭션이 커밋될 때까지 다음 트랜잭션은 대기했다가, 커밋 후의
+     * 최신 연결 개수를 보고 판단하게 된다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select m from Member m where m.id = :id")
+    Optional<Member> findByIdForUpdate(@Param("id") Long id);
 
     @Modifying
     @Query("update Member m set m.failedLoginCount = m.failedLoginCount + 1 where m.id = :id")

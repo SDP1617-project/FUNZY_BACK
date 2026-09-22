@@ -30,6 +30,8 @@ public enum ErrorCode {
     AUTH_016(HttpStatus.FORBIDDEN, "AUTH_016", "이메일 인증이 필요합니다. 인증 메일을 확인해주세요."),
     AUTH_017(HttpStatus.CONFLICT, "AUTH_017", "이미 다른 계정에 연결된 소셜 계정입니다."),
     AUTH_018(HttpStatus.CONFLICT, "AUTH_018", "이미 연결된 소셜 계정입니다."),
+    AUTH_019(HttpStatus.NOT_FOUND, "AUTH_019", "연결되지 않은 소셜 계정입니다."),
+    AUTH_020(HttpStatus.BAD_REQUEST, "AUTH_020", "마지막 남은 로그인 수단은 연결 해제할 수 없습니다."),
 
     ARCHIVE_001(HttpStatus.CONFLICT, "ARCHIVE_001", "Archive card already exists."),
     ARCHIVE_002(HttpStatus.NOT_FOUND, "ARCHIVE_002", "Archive card not found."),
